@@ -16,7 +16,7 @@ import {
   LogOut,
 } from "lucide-react";
 
-import { hasEnvVars } from "@/lib/utils";
+import { getInitials, hasEnvVars } from "@/lib/utils";
 import { EnvVarWarning } from "./env-var-warning";
 import { createClient } from "@/lib/supabase/client";
 
@@ -48,16 +48,6 @@ const navLinks = [
   { href: "/contacts", label: "Emergency Contacts", icon: Phone },
   { href: "/safety", label: "Safety Tips", icon: ShieldCheck },
 ];
-
-function getInitials(name: string) {
-  return name
-    .split(" ")
-    .filter(Boolean)
-    .map((part) => part[0])
-    .join("")
-    .slice(0, 2)
-    .toUpperCase();
-}
 
 export default function Navbar() {
   const router = useRouter();

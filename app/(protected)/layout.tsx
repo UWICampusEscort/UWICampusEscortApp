@@ -10,11 +10,7 @@ export default function ProtectedLayout({
   return (<>
     <main className="min-h-screen flex flex-col">
       <div className="flex-1 w-full flex flex-col gap-20">
-        <Navbar />
-
         {children}
-
-        <Footer />
       </div>
     </main>
     <ToastContainer />
