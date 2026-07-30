@@ -362,7 +362,7 @@ export default function ProfilePage() {
                 onClick={() => fileInputRef.current?.click()}
                 disabled={avatarUploading}
                 aria-label="Change avatar"
-                className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-sm transition-colors hover:text-foreground disabled:opacity-50"
+                className="absolute -bottom-1 -right-1 flex h-6 w-6 items-center justify-center rounded-full border bg-background text-muted-foreground shadow-xs transition-colors hover:text-foreground disabled:opacity-50"
               >
                 {avatarUploading ? (
                   <Loader2 className="h-3 w-3 animate-spin" />
