@@ -1,5 +1,6 @@
  "use client"
 import { Avatar, AvatarFallback, AvatarGroup, AvatarImage } from "@/components/ui/avatar";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -8,7 +9,7 @@ import { Field, FieldGroup, FieldLabel, FieldContent } from "@/components/ui/fie
 import { InputGroup, InputGroupInput, InputGroupAddon, InputGroupText } from "@/components/ui/input-group";
 import { createClient } from "@/lib/supabase/client";
 import { getInitials } from "@/lib/utils";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
 
 type TravelGroupUserData = {
@@ -29,6 +30,7 @@ type TravelGroupData = {
   created_at: string;
   created_by: string;
   requested_escorts: Array<string>;
+  alive: boolean;
   idToUserData: Map<string, TravelGroupUserData>;
 }
 
@@ -50,6 +52,8 @@ const has_departed = (time: string) => {
 
 const TravelGroup = ({ data, current_user }: { data: TravelGroupData, current_user: string }) => {
   const [time, setTime] = useState<string>('');
+  const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const dismissConfirm = useRef<() => void>(() => {});
 
   const updateTime = () => {
     setTime(get_time_status(data.departure_time));
@@ -60,6 +64,11 @@ const TravelGroup = ({ data, current_user }: { data: TravelGroupData, current_us
     const interval = setInterval(updateTime, 30000); // Update every minute
     return () => clearInterval(interval);
   }, [data.departure_time]);
+
+  useEffect(() => {
+    if (!isDetailsOpen)
+      dismissConfirm.current();
+  }, [isDetailsOpen])
 
   const joinGroup = async () => {
     if (!!!current_user)
@@ -77,6 +86,67 @@ const TravelGroup = ({ data, current_user }: { data: TravelGroupData, current_us
       toast.error('Error joining group. Please try again.\n' + error.message);
     } else if (success !== true) {
       toast.error('Group is full!');
+    }
+  }
+
+  const kick = async (memberId: string) => {
+    if (current_user !== data.created_by) {
+      toast.error('Only the group owner can kick members.');
+      return;
+    }
+
+    const db = createClient();
+    const { data: success, error } = await db
+      .rpc('remove_group_member', {
+        group_id: data.id,
+        member: memberId,
+      });
+
+    if (error) {
+      console.error('Error executing query:', error);
+      toast.error('Error kicking member. Please try again.\n' + error.message);
+    } else if (success !== true) {
+      toast.error('Failed to kick member.');
+    }
+  }
+
+  const rejectEscort = async (escortId: string) => {
+    if (current_user !== data.created_by) {
+      toast.error('Only the group owner can reject escorts.');
+      return;
+    }
+    
+    const db = createClient();
+    const { data: success, error } = await db
+      .rpc('remove_group_escort', {
+        group_id: data.id,
+        escort: escortId,
+      });
+
+    if (error) {
+      console.error('Error executing query:', error);
+      toast.error('Error rejecting escort. Please try again.\n' + error.message);
+    } else if (success !== true) {
+      toast.error('Failed to reject escort.');
+    }
+  }
+
+  const destroyGroup = async () => {
+    if (current_user !== data.created_by) {
+      toast.error('Only the group owner can destroy the group.');
+      return;
+    }
+
+    if (window.confirm("Are you sure you want to destroy this group? This action cannot be undone.")) {
+      const db = createClient();
+      const { data: _, error } = await db.from("groups")
+        .update({ alive: false })
+        .eq("id", data.id);
+      if (error) {
+        console.error('Error destroying group:', error);
+        toast.error('Error destroying group. Please try again.\n' + error.message);
+      }
+      setIsDetailsOpen(false);
     }
   }
 
@@ -104,7 +174,7 @@ const TravelGroup = ({ data, current_user }: { data: TravelGroupData, current_us
             <span className="text-sm">{data.members.length} of {data.capacity} spots filled</span>
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <CardContent className="flex justify-between items-center gap-4">
           { current_user && data.members.includes(current_user) ?
             <Button variant={"secondary"} size={"sm"} className="w-full" disabled>
               Already Joined
@@ -114,6 +184,79 @@ const TravelGroup = ({ data, current_user }: { data: TravelGroupData, current_us
               Join Group
             </Button>
           }
+
+          <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
+            <DialogTrigger asChild>
+              <Button variant={"outline"} size={"sm"} className="w-full">Details</Button>
+            </DialogTrigger>
+            <DialogContent className="min-w-[65vw]">
+              <DialogHeader>
+                <DialogTitle className="text-sm sm:text-base">{data.name}</DialogTitle>
+                <DialogDescription className="text-xs sm:text-sm" asChild>
+                  <div className="flex flex-col gap-2">
+                    <div className="flex flex-col sm:flex-row justify-between overflow-x-auto scrollbar-none">
+                      <span className="text-sm font-semibold">{`${data.start_location} -> ${data.end_location}`}</span>
+                      <span className="text-sm text-muted-foreground font-normal min-w-fit">{time}</span>
+                    </div>
+
+                    { (data.escorts.length > 0 || data.requested_escorts.length > 0) && <>
+                      <span className="text-sm mt-2">Escorts ({data.escorts.length})</span>
+                      <div className="h-48 overflow-y-auto border inset border-border rounded-md p-1 scrollbar-thin">
+                        {Array.from(new Set([...data.escorts, ...data.requested_escorts])).map((escortId) => {
+                          return <div key={escortId} className="flex items-center gap-2 p-2">
+                            <Avatar className="h-7 w-7 border-2 border-primary-foreground">
+                              <AvatarImage src={data.idToUserData?.get(escortId)?.avatar_url} alt={data.name} />
+                              <AvatarFallback className="text-xs">{getInitials(data.idToUserData?.get(escortId)?.name || "Unknown")}</AvatarFallback>
+                            </Avatar>
+                            <span className="text-sm">{data.idToUserData?.get(escortId)?.name || "Unknown"}</span>
+
+                            { current_user !== escortId && data.escorts.includes(escortId) &&
+                              <Button variant={"destructive"} size={"sm"} className="ml-auto" disabled={current_user !== data.created_by} onClick={() => rejectEscort(escortId)}>
+                                {current_user === data.created_by ? "Reject" : "Reject (Owner Only)"}
+                              </Button>
+                            }
+
+                            { !data.escorts.includes(escortId) && <Badge variant={"default"}>Requested</Badge> }
+                          </div>
+                        })}
+                      </div>
+                    </>}
+                    
+                    <span className="text-sm mt-2">Members ({data.members.length}/{data.capacity})</span>
+                    <div className="h-48 overflow-y-auto border inset border-border rounded-md p-1 scrollbar-thin">
+                      {data.members.map((memberId) => {
+                        return <div key={memberId} className="flex items-center gap-2 p-2">
+                          <Avatar className="h-7 w-7 border-2 border-primary-foreground">
+                            <AvatarImage src={data.idToUserData?.get(memberId)?.avatar_url} alt={data.name} />
+                            <AvatarFallback className="text-xs">{getInitials(data.idToUserData?.get(memberId)?.name || "Unknown")}</AvatarFallback>
+                          </Avatar>
+                          <span className="text-sm">{data.idToUserData?.get(memberId)?.name || "Unknown"}</span>
+
+                          { current_user !== memberId &&
+                            <Button variant={"destructive"} size={"sm"} className="ml-auto" disabled={current_user !== data.created_by} onClick={() => kick(memberId)}>
+                              {current_user === data.created_by ? "Kick" : "Kick (Owner Only)"}
+                            </Button>
+                          }
+                        </div>
+                      })}
+                    </div>
+                  </div>
+                </DialogDescription>
+              </DialogHeader>
+
+
+
+              <DialogFooter>
+                { current_user === data.created_by &&
+                  <Button variant="destructive" size="sm" onClick={destroyGroup}>Destroy</Button>
+                }
+
+                <DialogClose asChild>
+                  <Button variant="outline">Close</Button>
+                </DialogClose>
+              </DialogFooter>
+            </DialogContent>
+          </Dialog>
         </CardContent>
       </Card>
   );
@@ -123,6 +266,7 @@ export default function HomePage() {
   const [userId, setUserId] = useState<string>('');
   const [groups, setGroups] = useState<TravelGroupData[]>([]);
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
+  const [requestingEscort, setRequestingEscort] = useState(false);
 
   const refresh = async () => {
     const db = createClient();
@@ -135,13 +279,14 @@ export default function HomePage() {
 
     db.from("groups")
       .select("*")
+      .eq("alive", true)
       .then(async ({ data }) => {
         var groupsWithUserData: TravelGroupData[] = [];
         if (data) {
           await Promise.all(data.map(async (grp) => {
             const { data: userData } = await db.from("profiles")
               .select("*")
-              .in("id", grp.members);
+              .in("id", Array.from(new Set([...grp.members, ...grp.escorts, ...grp.requested_escorts])));
             if (userData) {
               const idToUserData = new Map<string, TravelGroupUserData>();
               userData.forEach(user => {
@@ -189,7 +334,7 @@ export default function HomePage() {
       // Rebuild the idToUserData map for the updated group by fetching user data from the profiles table
       db.from("profiles")
         .select("*")
-        .in("id", updatedGroup.members)
+        .in("id", Array.from(new Set([...updatedGroup.members, ...updatedGroup.escorts, ...updatedGroup.requested_escorts])))
         .then(({ data: userData }) => {
           if (userData) {
             const idToUserData = new Map<string, TravelGroupUserData>();
@@ -349,7 +494,9 @@ export default function HomePage() {
                       <Checkbox
                         id="request_escorts"
                         name="request_escorts"
-                        defaultChecked={false}
+                        defaultChecked={requestingEscort}
+                        onCheckedChange={(v: boolean) => setRequestingEscort(v)}
+                        value={requestingEscort ? "on" : "off"}
                       />
                       <FieldContent>
                         <FieldLabel htmlFor="request_escorts">
@@ -357,6 +504,14 @@ export default function HomePage() {
                         </FieldLabel>
                       </FieldContent>
                     </Field>
+
+                    { requestingEscort && <>
+                      <Field orientation="horizontal">
+                        <span className="text-xs sm:text-sm text-muted-foreground">
+                          Requesting escorts will notify the campus security team to join your group for added safety. Please note that escorts may not always be available.
+                        </span>
+                      </Field>
+                    </>}
 
                   </FieldGroup>
                 </form>
@@ -372,7 +527,7 @@ export default function HomePage() {
       </div>
 
       <div className="h-160 grid grid-cols-1 gap-6 md:grid-cols-2 py-12 px-4 sm:px-6 scrollbar-none overflow-y-auto">
-        {groups.map((group) => (has_departed(group.departure_time) ? null :
+        {groups.filter(group => group.alive).map((group) => (has_departed(group.departure_time) ? null :
           <TravelGroup key={group.id} data={group} current_user={userId} />
         ))}
       </div>

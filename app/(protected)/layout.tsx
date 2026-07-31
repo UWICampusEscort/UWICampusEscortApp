@@ -1,6 +1,3 @@
-import { Footer } from "@/components/footer";
-import Navbar from "@/components/navbar";
- import { ToastContainer } from 'react-toastify';
 
 export default function ProtectedLayout({
   children,
@@ -13,6 +10,5 @@ export default function ProtectedLayout({
         {children}
       </div>
     </main>
-    <ToastContainer />
   </>);
 }
