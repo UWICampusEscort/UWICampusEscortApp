@@ -27,28 +27,40 @@ import {
   ShieldAlert,
   ShieldQuestion,
   XCircle,
+  IdCard,
+  VaultIcon,
+  ChevronDownIcon,
+  CalendarClock,
 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
-import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "react-toastify";
+import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
+import { Switch } from "@/components/ui/switch";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Calendar } from "@/components/ui/calendar";
+import { formatDatePPP } from "@/lib/utils";
+import { PhoneInput } from "@/components/reui/phone-input";
 
 type IdentityStatus = "unverified" | "pending" | "verified" | "failed";
 
-type Profile = {
+export type Profile = {
   id: string;
+  email: string;
   full_name: string | null;
   avatar_url: string | null;
   phone_verified: boolean;
   identity_status: IdentityStatus;
   persona_inquiry_id: string | null;
   updated_at: string | null;
+  escort: boolean;
+  graduation_date: string;
 };
 
 function getInitials(name: string) {
@@ -75,6 +87,10 @@ export default function ProfilePage() {
 
   const [fullName, setFullName] = useState("");
   const [savingName, setSavingName] = useState(false);
+
+  const [savingGraduationDate, setSavingGraduationDate] = useState(false);
+
+  const [savingBeAnEscort, setSavingBeAnEscort] = useState(false);
 
   const [avatarUploading, setAvatarUploading] = useState(false);
 
@@ -251,6 +267,46 @@ export default function ProfilePage() {
     setPhoneLoading(false);
   };
 
+  /* --- Be an escort ----------------------------------------*/
+  const handleSaveBeAnEscort = async (value: boolean) => {
+    if (!user) return;
+    setSavingBeAnEscort(true);
+    setError(null);
+    const { error } = await supabase
+      .from("profiles")
+      .upsert({ id: user.id, escort: value, updated_at: new Date().toISOString() });
+
+    if (error) {
+      setError(error.message);
+    } else {
+      setProfile({ ...profile, escort: value } as Profile);
+    }
+    setSavingBeAnEscort(false);
+  };
+
+  /* --- Graduation date ----------------------------------------*/
+  const handleSaveGraduationDate = async (value: string) => {
+    if (!user) return;
+
+    if (isNaN(new Date(value).getTime()) || (profile?.graduation_date && new Date(value).getTime() === new Date(profile.graduation_date).getTime()))
+      return;
+
+    setSavingGraduationDate(true);
+    setError(null);
+
+    const { error } = await supabase
+      .from("profiles")
+      .upsert({ id: user.id, graduation_date: value, updated_at: new Date().toISOString() });
+
+    if (error) {
+      setError(error.message);
+    }
+    else {
+      setProfile({ ...profile, graduation_date: value } as Profile);
+    }
+    setSavingGraduationDate(false);
+  };
+
   /* --- Identity verification (Persona) -----------------------------------
   const handleVerifyIdentity = () => {
     if (!user) return;
@@ -301,7 +357,7 @@ export default function ProfilePage() {
     );
   }
 
-  const displayName = fullName || user.email || "Your account";
+  const displayName = fullName || "Your account";
 
   return (
     <div className="mx-auto w-full max-w-5xl px-4 sm:px-6 lg:px-8 py-12">
@@ -331,13 +387,13 @@ export default function ProfilePage() {
         <CardHeader>
           <CardTitle className="text-base">Security checklist</CardTitle>
           <CardDescription>
-            Complete all three to unlock the full escort service.
+            * - Required for using the escort service.
           </CardDescription>
         </CardHeader>
         <CardContent className="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <ChecklistItem label="Email verified" done={emailVerified} />
+          <ChecklistItem label="Email verified *" done={emailVerified} />
           <ChecklistItem label="Phone verified" done={phoneVerified} />
-          <ChecklistItem label="Identity verified" done={identityStatus === "verified"} />
+          <ChecklistItem label="Identity verified *" done={identityStatus === "verified"} />
         </CardContent>
       </Card>
 
@@ -345,7 +401,7 @@ export default function ProfilePage() {
       <Card className="mb-6">
         <CardHeader>
           <CardTitle className="text-base">Personal information</CardTitle>
-          <CardDescription>Your name and profile photo.</CardDescription>
+          <CardDescription></CardDescription>
         </CardHeader>
         <CardContent className="space-y-6">
           <div className="flex items-center gap-4">
@@ -386,15 +442,19 @@ export default function ProfilePage() {
 
           <Separator />
 
-          <div className="space-y-2">
-            <Label htmlFor="full-name">Full name</Label>
-            <div className="flex gap-2">
+          <FieldGroup className="w-full">
+            <Field orientation="horizontal">
+              <FieldLabel htmlFor="full-name" className="w-16">
+                <IdCard className="h-4 w-4 text-muted-foreground" /> Full name {savingName && <Loader2 className="h-4 w-4 animate-spin" />}
+              </FieldLabel>
               <Input
                 id="full-name"
                 value={fullName}
                 onChange={(e: any) => setFullName(e.target.value)}
                 placeholder="Enter your full name"
+                className="flex-3 text-sm"
               />
+
               { fullName !== (profile?.full_name ?? "") &&
                 <Button
                     onClick={handleSaveName}
@@ -403,86 +463,83 @@ export default function ProfilePage() {
                     {savingName ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
                 </Button>
               }
-            </div>
-          </div>
-        </CardContent>
-      </Card>
+            </Field>
 
-      {/* Email */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="text-base">Email</CardTitle>
-          <CardDescription>Used for login and safety notifications.</CardDescription>
-        </CardHeader>
-        <CardContent>
-          <div className="flex flex-col items-start justify-between gap-3 sm:flex-row sm:items-center">
-            <div className="flex items-center gap-2">
-              <Mail className="h-4 w-4 text-muted-foreground" />
-              <span className="text-sm">{user.email}</span>
+            <Field orientation="horizontal">
+              <FieldLabel htmlFor="email" className="w-16">
+                <Mail className="h-4 w-4 text-muted-foreground" /> Email
+              </FieldLabel>
               {emailVerified ? (
-                <Badge variant="secondary" className="gap-1">
-                  <ShieldCheck className="h-3 w-3" /> Verified
-                </Badge>
-              ) : (
-                <Badge variant="outline" className="gap-1 text-amber-600">
-                  <ShieldAlert className="h-3 w-3" /> Unverified
-                </Badge>
-              )}
-            </div>
-            {!emailVerified && (
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={handleResendEmailVerification}
-                disabled={resendingEmail}
-              >
-                {resendingEmail ? (
-                  <Loader2 className="h-4 w-4 animate-spin" />
+                  <Badge variant="secondary" className="gap-1">
+                    <ShieldCheck className="h-3 w-3" /> Verified
+                  </Badge>
                 ) : (
-                  "Resend verification email"
+                  <Badge variant="outline" className="gap-1 text-amber-600">
+                    <ShieldAlert className="h-3 w-3" /> Unverified
+                  </Badge>
                 )}
-              </Button>
-            )}
-          </div>
-        </CardContent>
-      </Card>
+                {!emailVerified && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={handleResendEmailVerification}
+                    disabled={resendingEmail}
+                  >
+                    {resendingEmail ? (
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                    ) : (
+                      "Resend verification email"
+                    )}
+                  </Button>
+                )}
+            </Field>
 
-      {/* Phone */}
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="text-base">Phone number</CardTitle>
-          <CardDescription>
-            Escorts and dispatch use this to reach you during a request.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center gap-2">
-            <Phone className="h-4 w-4 text-muted-foreground" />
-            {phoneVerified ? (
-              <Badge variant="secondary" className="gap-1">
-                <ShieldCheck className="h-3 w-3" /> Verified
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="gap-1 text-amber-600">
-                <ShieldAlert className="h-3 w-3" /> Unverified
-              </Badge>
-            )}
-          </div>
+            <Field orientation="horizontal">
+              <FieldLabel htmlFor="phone-number" className="w-16">
+                <Phone className="h-4 w-4 text-muted-foreground" /> Phone number
+              </FieldLabel>
+              
+              <div className="flex flex-col gap-2 sm:flex-row flex-3">
+                <PhoneInput placeholder="Enter phone number" value={phone} onChange={(e) => setPhone(e)} className="w-full" />
 
-          <div className="flex flex-col gap-2 sm:flex-row">
-            <Input
-              type="tel"
-              value={phone}
-              onChange={(e: any) => setPhone(e.target.value)}
-              placeholder="+1 868 555 0100"
-            />
+                { savedPhone !== phone &&
+                    <Button onClick={handleSavePhoneNumber} disabled={phoneLoading || !phone}>
+                        {phoneLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+                    </Button>
+                }
+              </div>
+            </Field>
 
-            { savedPhone !== phone &&
-                <Button onClick={handleSavePhoneNumber} disabled={phoneLoading || !phone}>
-                    {phoneLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
-                </Button>
-            }
-          </div>
+            <Field orientation="horizontal">
+              <FieldLabel htmlFor="graduation-data" className="w-16">
+                <CalendarClock className="h-4 w-4 text-muted-foreground" /> Graduation Date
+              </FieldLabel>
+              <Popover>
+                <PopoverTrigger asChild>
+                  <Button variant={"outline"} data-empty={!profile?.graduation_date} className="w-62 justify-between text-left font-normal data-[empty=true]:text-muted-foreground">{profile?.graduation_date ? formatDatePPP(new Date(profile.graduation_date)) : <span>Pick a date</span>}<ChevronDownIcon data-icon="inline-end" /></Button>
+                </PopoverTrigger>
+                <PopoverContent className="w-auto p-0" align="start">
+                  <Calendar
+                    mode="single"
+                    selected={profile?.graduation_date ? new Date(profile.graduation_date) : undefined}
+                    onSelect={(date) => handleSaveGraduationDate(date?.toISOString() ?? "")}
+                    defaultMonth={profile?.graduation_date ? new Date(profile.graduation_date) : undefined}
+                    required={false}
+                    disabled={savingGraduationDate}
+                  />
+                  {savingGraduationDate && <div className="absolute inset-0 flex items-center justify-center bg-background/50"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}
+                </PopoverContent>
+              </Popover>
+            </Field>
+          
+            <Field orientation="horizontal">
+              <FieldLabel htmlFor="be-an-escort-switch" className="w-16">
+                <VaultIcon className="h-4 w-4 text-muted-foreground" /> Be an escort {savingBeAnEscort && <Loader2 className="h-4 w-4 animate-spin" />}
+              </FieldLabel>
+              <Switch id="be-an-escort-switch" onCheckedChange={(v: boolean) => handleSaveBeAnEscort(v)} checked={profile?.escort ?? false} disabled={savingBeAnEscort} />
+            </Field>
+          </FieldGroup>
+
         </CardContent>
       </Card>
 

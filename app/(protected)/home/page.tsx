@@ -1,4 +1,4 @@
- "use client"
+"use client"
 import { Avatar, AvatarFallback, AvatarGroup, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -11,6 +11,8 @@ import { createClient } from "@/lib/supabase/client";
 import { getInitials } from "@/lib/utils";
 import { useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
+import { Profile } from "../profile/page";
+import RequestEscortSearch from "./requestescortsearch";
 
 type TravelGroupUserData = {
   id: string;
@@ -57,7 +59,7 @@ const TravelGroup = ({ data, current_user }: { data: TravelGroupData, current_us
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [confirmingDestroy, setConfirmingDestroy] = useState(false);
   const [confirmingBan, setConfirmingBan] = useState("");
-  const dismissConfirm = useRef<() => void>(() => {});
+  const dismissConfirm = useRef<() => void>(() => { });
 
   const updateTime = () => {
     setTime(get_time_status(data.departure_time));
@@ -140,7 +142,7 @@ const TravelGroup = ({ data, current_user }: { data: TravelGroupData, current_us
       toast.error('Only the group owner can reject escorts.');
       return;
     }
-    
+
     const db = createClient();
     const { data: success, error } = await db
       .rpc('remove_group_escort', {
@@ -175,140 +177,192 @@ const TravelGroup = ({ data, current_user }: { data: TravelGroupData, current_us
 
   return (
     <Card className="mb-6 w-full h-fit">
-        <CardHeader>
-          <CardTitle className="text-base flex flex-col gap-2">
-            <span>{data.name}</span>
-            <div className="flex flex-col sm:flex-row justify-between overflow-x-auto scrollbar-none">
-              <span className="text-sm font-semibold">{`${data.start_location} -> ${data.end_location}`}</span>
-              <span className="text-sm text-muted-foreground font-normal min-w-fit">{time}</span>
-            </div>
-          </CardTitle>
+      <CardHeader>
+        <CardTitle className="text-base flex flex-col gap-2">
+          <span>{data.name}</span>
+          <div className="flex flex-col sm:flex-row justify-between overflow-x-auto scrollbar-none">
+            <span className="text-sm font-semibold">{`${data.start_location} -> ${data.end_location}`}</span>
+            <span className="text-sm text-muted-foreground font-normal min-w-fit">{time}</span>
+          </div>
+        </CardTitle>
 
-          <CardDescription>
-            <AvatarGroup className="overflow-x-auto scrollbar-none">
-              {data.members.map((memberId) => {
-                return <Avatar className="h-7 w-7 border-2 border-primary-foreground" key={memberId}>
-                  <AvatarImage src={data.idToUserData?.get(memberId)?.avatar_url} alt={data.name} />
-                  <AvatarFallback className="text-xs">{getInitials(data.idToUserData?.get(memberId)?.name || "Unknown")}</AvatarFallback>
-                </Avatar>
-              })}
-            </AvatarGroup>
+        <CardDescription>
+          <AvatarGroup className="overflow-x-auto scrollbar-none">
+            {data.members.map((memberId) => {
+              return <Avatar className="h-7 w-7 border-2 border-primary-foreground" key={memberId}>
+                <AvatarImage src={data.idToUserData?.get(memberId)?.avatar_url} alt={data.name} />
+                <AvatarFallback className="text-xs">{getInitials(data.idToUserData?.get(memberId)?.name || "Unknown")}</AvatarFallback>
+              </Avatar>
+            })}
+          </AvatarGroup>
 
-            <span className="text-sm">{data.members.length} of {data.capacity} spots filled</span>
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="flex justify-between items-center gap-4">
-          { current_user && data.members.includes(current_user) ?
-            <Button variant={"secondary"} size={"sm"} className="w-full" disabled>
-              Already Joined
+          <span className="text-sm">{data.members.length} of {data.capacity} spots filled</span>
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="flex justify-between items-center gap-4">
+        {current_user && data.members.includes(current_user) ?
+          <Button variant={"secondary"} size={"sm"} className="w-full" disabled>
+            Already Joined
+          </Button>
+          : (data.banned_members.includes(current_user) ?
+            <Button variant={"destructive"} size={"sm"} className="w-full" disabled>
+              Banned from Group
             </Button>
-            : ( data.banned_members.includes(current_user) ?
-              <Button variant={"destructive"} size={"sm"} className="w-full" disabled>
-                Banned from Group
-              </Button>
-              :
-              <Button variant={"secondary"} size={"sm"} className="w-full" onClick={joinGroup}>
-                Join Group
-              </Button>
-            )
-          }
+            :
+            <Button variant={"secondary"} size={"sm"} className="w-full" onClick={joinGroup}>
+              Join Group
+            </Button>
+          )
+        }
 
-          <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
-            <DialogTrigger asChild>
-              <Button variant={"outline"} size={"sm"} className="w-full">Details</Button>
-            </DialogTrigger>
-            <DialogContent className="w-[92vw] sm:w-full sm:max-w-2xl max-h-[85vh] overflow-x-hidden overflow-y-auto scrollbar-thin">
-              <DialogHeader>
-                <DialogTitle className="text-sm sm:text-base">{data.name}</DialogTitle>
-                <DialogDescription className="text-xs sm:text-sm" asChild>
-                  <div className="flex flex-col gap-2">
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                      <span className="text-sm font-semibold min-w-0 flex-1 truncate">
-                        {`${data.start_location} -> ${data.end_location}`}
-                      </span>
-                      <span className="text-sm text-muted-foreground font-normal shrink-0">{time}</span>
-                    </div>
+        <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
+          <DialogTrigger asChild>
+            <Button variant={"outline"} size={"sm"} className="w-full">Details</Button>
+          </DialogTrigger>
+          <DialogContent className="w-[92vw] sm:w-full sm:max-w-2xl max-h-[85vh] overflow-x-hidden overflow-y-auto scrollbar-thin">
+            <DialogHeader>
+              <DialogTitle className="text-sm sm:text-base">{data.name}</DialogTitle>
+              <DialogDescription className="text-xs sm:text-sm" asChild>
+                <div className="flex flex-col gap-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                    <span className="text-sm font-semibold min-w-0 flex-1 truncate">
+                      {`${data.start_location} -> ${data.end_location}`}
+                    </span>
+                    <span className="text-sm text-muted-foreground font-normal shrink-0">{time}</span>
+                  </div>
 
-                    { (data.escorts.length > 0 || data.requested_escorts.length > 0) && <>
-                      <span className="text-sm mt-2">Escorts ({data.escorts.length})</span>
-                      <div className="h-48 overflow-y-auto overflow-x-hidden border inset border-border rounded-md p-1 scrollbar-thin">
-                        {Array.from(new Set([...data.escorts, ...data.requested_escorts])).map((escortId) => {
-                          return <div key={escortId} className="flex items-center gap-2 p-2">
-                            <Avatar className="h-7 w-7 shrink-0 border-2 border-primary-foreground">
-                              <AvatarImage src={data.idToUserData?.get(escortId)?.avatar_url} alt={data.name} />
-                              <AvatarFallback className="text-xs">{getInitials(data.idToUserData?.get(escortId)?.name || "Unknown")}</AvatarFallback>
-                            </Avatar>
-                            <span className="text-sm min-w-0 flex-1 truncate">
-                              {data.idToUserData?.get(escortId)?.name || "Unknown"}
-                            </span>
-
-                            { current_user !== escortId && data.escorts.includes(escortId) &&
-                              <Button variant={"destructive"} size={"sm"} className="ml-auto shrink-0" disabled={current_user !== data.created_by} onClick={() => rejectEscort(escortId)}>
-                                {current_user === data.created_by ? "Reject" : "Reject (Owner Only)"}
-                              </Button>
-                            }
-
-                            { !data.escorts.includes(escortId) && <Badge variant={"default"} className="shrink-0">Requested</Badge> }
-                          </div>
-                        })}
-                      </div>
-                    </>}
-
-                    <span className="text-sm mt-2">Members ({data.members.length}/{data.capacity})</span>
+                  {(data.escorts.length > 0 || data.requested_escorts.length > 0) && <>
+                    <span className="text-sm mt-2">Escorts ({data.escorts.length})</span>
                     <div className="h-48 overflow-y-auto overflow-x-hidden border inset border-border rounded-md p-1 scrollbar-thin">
-                      {data.members.map((memberId) => {
-                        return <div key={memberId} className="flex items-center gap-2 p-2">
+                      {Array.from(new Set([...data.escorts, ...data.requested_escorts])).map((escortId) => {
+                        return <div key={escortId} className="flex items-center gap-2 p-2">
                           <Avatar className="h-7 w-7 shrink-0 border-2 border-primary-foreground">
-                            <AvatarImage src={data.idToUserData?.get(memberId)?.avatar_url} alt={data.name} />
-                            <AvatarFallback className="text-xs">{getInitials(data.idToUserData?.get(memberId)?.name || "Unknown")}</AvatarFallback>
+                            <AvatarImage src={data.idToUserData?.get(escortId)?.avatar_url} alt={data.name} />
+                            <AvatarFallback className="text-xs">{getInitials(data.idToUserData?.get(escortId)?.name || "Unknown")}</AvatarFallback>
                           </Avatar>
-
-                          <span className="text-sm line-clamp-1">
-                            {data.idToUserData?.get(memberId)?.name || "~Unknown"}
+                          <span className="text-sm min-w-0 flex-1 truncate">
+                            {data.idToUserData?.get(escortId)?.name || "Unknown"}
                           </span>
 
-                          { current_user !== memberId && current_user === data.created_by && <div className="flex gap-2 ml-auto shrink-0">
-                              <Button variant={"destructive"} size={"sm"} onClick={() => kick(memberId)}>Kick</Button>
-                              <Button variant={"destructive"} size={"sm"} onClick={() => {
-                                if (confirmingBan === memberId) {
-                                  ban(memberId);
-                                  setConfirmingBan("");
-                                } else {
-                                  setConfirmingBan(memberId);
-                                  setTimeout(() => setConfirmingBan(""), 3000);
-                                }
-                              }}>{confirmingBan === memberId ? "Are you sure?" : "Ban"}</Button>
-                          </div>}
+                          {current_user !== escortId && data.escorts.includes(escortId) &&
+                            <Button variant={"destructive"} size={"sm"} className="ml-auto shrink-0" disabled={current_user !== data.created_by} onClick={() => rejectEscort(escortId)}>
+                              {current_user === data.created_by ? "Reject" : "Reject (Owner Only)"}
+                            </Button>
+                          }
+
+                          {!data.escorts.includes(escortId) && <Badge variant={"default"} className="shrink-0">Requested</Badge>}
                         </div>
                       })}
                     </div>
+                  </>}
+
+                  <span className="text-sm mt-2">Members ({data.members.length}/{data.capacity})</span>
+                  <div className="h-48 overflow-y-auto overflow-x-hidden border inset border-border rounded-md p-1 scrollbar-thin">
+                    {data.members.map((memberId) => {
+                      return <div key={memberId} className="flex items-center gap-2 p-2">
+                        <Avatar className="h-7 w-7 shrink-0 border-2 border-primary-foreground">
+                          <AvatarImage src={data.idToUserData?.get(memberId)?.avatar_url} alt={data.name} />
+                          <AvatarFallback className="text-xs">{getInitials(data.idToUserData?.get(memberId)?.name || "Unknown")}</AvatarFallback>
+                        </Avatar>
+
+                        <span className="text-sm line-clamp-1">
+                          {data.idToUserData?.get(memberId)?.name || "~Unknown"}
+                        </span>
+
+                        {current_user !== memberId && current_user === data.created_by && <div className="flex gap-2 ml-auto shrink-0">
+                          <Button variant={"destructive"} size={"sm"} onClick={() => kick(memberId)}>Kick</Button>
+                          <Button variant={"destructive"} size={"sm"} onClick={() => {
+                            if (confirmingBan === memberId) {
+                              ban(memberId);
+                              setConfirmingBan("");
+                            } else {
+                              setConfirmingBan(memberId);
+                              setTimeout(() => setConfirmingBan(""), 3000);
+                            }
+                          }}>{confirmingBan === memberId ? "Are you sure?" : "Ban"}</Button>
+                        </div>}
+                      </div>
+                    })}
                   </div>
-                </DialogDescription>
-              </DialogHeader>
-
-              <DialogFooter>
-                <div className="flex gap-2 w-full justify-between">
-                  { current_user === data.created_by &&
-                    <Button variant="destructive" size="sm" onClick={() => {
-                      if (confirmingDestroy)
-                        destroyGroup();
-                      else {
-                        setConfirmingDestroy(true);
-                        setTimeout(() => setConfirmingDestroy(false), 3000);
-                      }
-                    }}>{confirmingDestroy ? "Are you sure?" : "Destroy"}</Button>
-                  }
-
-                  <DialogClose asChild>
-                    <Button variant="outline">Close</Button>
-                  </DialogClose>
                 </div>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </CardContent>
-      </Card>
+              </DialogDescription>
+            </DialogHeader>
+
+            <DialogFooter>
+              <div className="flex gap-2 w-full justify-between">
+                {current_user === data.created_by &&
+                  <Button variant="destructive" size="sm" onClick={() => {
+                    if (confirmingDestroy)
+                      destroyGroup();
+                    else {
+                      setConfirmingDestroy(true);
+                      setTimeout(() => setConfirmingDestroy(false), 3000);
+                    }
+                  }}>{confirmingDestroy ? "Are you sure?" : "Destroy"}</Button>
+                }
+
+                <DialogClose asChild>
+                  <Button variant="outline">Close</Button>
+                </DialogClose>
+              </div>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      </CardContent>
+    </Card>
   );
+};
+
+const RequestEscort = ({ escortUsers, specificEscorts, setSpecificEscorts }: { escortUsers: Profile[], specificEscorts: string[], setSpecificEscorts: React.Dispatch<React.SetStateAction<string[]>> }) => {
+  const [searchValue, setSearchValue] = useState<string>('');
+
+  const handleRequestEscort = () => {
+    const selectedEscort = escortUsers.find(e => e.email.toLowerCase() === searchValue.toLowerCase());
+    if (selectedEscort)
+      setSpecificEscorts(prev => [...prev, selectedEscort.id]);
+
+    setSearchValue('');
+  }
+
+
+  return (<div className="flex flex-col gap-2 w-full">
+    <div className="flex flex-col gap-2 mx-auto w-[90%] sm:w-[50%] min-w-[40vw]">
+      <div className="flex gap-2">
+        <Button variant={specificEscorts.length === 0 ? "default" : "outline"} size="sm" type="button" className="flex-1" onClick={() => setSpecificEscorts([])}>Any</Button>
+        <Button variant={specificEscorts.length > 0 ? "default" : "outline"} size="sm" type="button" className="flex-1">Specific</Button>
+      </div>
+
+      <div className="flex flex-col sm:flex-row gap-2">
+        <RequestEscortSearch className="flex-3" escortUsers={escortUsers} value={searchValue} setValue={setSearchValue} />
+        <Button variant={"outline"} size="sm" type="button" className="sm:flex-1" disabled={!searchValue} onClick={handleRequestEscort}>
+          Request {escortUsers.find(e => e.email.toLowerCase() === searchValue.toLowerCase())?.full_name || searchValue} ({"XX"} credits)
+        </Button>
+      </div>
+
+    </div>
+
+    {specificEscorts.length > 0 && <div className="flex flex-col gap-2">
+      <span className="text-sm">Requested Escorts:</span>
+      <div className="flex flex-wrap gap-2">
+        {specificEscorts.map((escortId) => {
+          const escort = escortUsers.find(e => e.id === escortId);
+          if (!escort) return null;
+          return <Badge key={escortId} variant={"secondary"} className="flex items-center gap-2">
+            <Avatar className="h-5 w-5 border-2 border-primary-foreground">
+              <AvatarImage src={escort.avatar_url ?? ""} alt={escort.full_name || escort.email} />
+              <AvatarFallback className="text-xs">{getInitials(escort.full_name || escort.email)}</AvatarFallback>
+            </Avatar>
+            <span>{escort.full_name || escort.email}</span>
+            <Button variant={"ghost"} size={"icon"} onClick={() => setSpecificEscorts(prev => prev.filter(id => id !== escortId))}>
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </Button>
+          </Badge>
+        })}
+      </div>
+    </div>}
+  </div>);
 };
 
 export default function HomePage() {
@@ -316,6 +370,9 @@ export default function HomePage() {
   const [groups, setGroups] = useState<TravelGroupData[]>([]);
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
   const [requestingEscort, setRequestingEscort] = useState(false);
+  const [specificEscorts, setSpecificEscorts] = useState<string[]>([]);
+
+  const [availableEscorts, setAvailableEscorts] = useState<Profile[]>([]);
 
   const refresh = async () => {
     const db = createClient();
@@ -353,6 +410,16 @@ export default function HomePage() {
           }));
         }
         setGroups(groupsWithUserData);
+      });
+
+    db.from("profiles")
+      .select("*")
+      .eq("escort", true)
+      .gt("graduation_date", new Date().toISOString())
+      .then(({ data }) => {
+        if (data) {
+          setAvailableEscorts(data);
+        }
       });
   };
 
@@ -423,23 +490,26 @@ export default function HomePage() {
     const endLocation = formData.get("end_location") as string;
     const departureTime = formData.get("departure_time") as string;
     const requestEscorts = formData.get("request_escorts") === "on";
-    
+
     const db = createClient();
-    const { data, error } = await db.from("groups").insert([{
+    const { error } = await db.from("groups").insert([{
       name: groupName,
       capacity: capacity,
       start_location: startLocation,
       end_location: endLocation,
       departure_time: new Date(departureTime).toISOString(),
       members: [userId],
-      requested_escorts: requestEscorts ? [] : [],
+      requested_escorts: requestEscorts ? specificEscorts : [],
+      need_escort: requestEscorts,
     }]);
 
     if (error) {
       console.error('Error creating travel group:', error);
       toast.error('Error creating travel group. Please try again.\n' + error.message);
-    } 
+    }
     else {
+      setSpecificEscorts([]);
+      setRequestingEscort(false);
       setIsCreateGroupOpen(false);
     }
   };
@@ -454,7 +524,7 @@ export default function HomePage() {
             <DialogTrigger asChild>
               <Button variant={"default"} size={"sm"}>Create new</Button>
             </DialogTrigger>
-            <DialogContent className="min-w-[75vw]">
+            <DialogContent className="min-w-[75vw] max-h-[85vh] overflow-x-hidden overflow-y-auto scrollbar-thin">
               <DialogHeader>
                 <DialogTitle className="text-sm sm:text-base">Create Travel Group</DialogTitle>
                 <DialogDescription className="text-xs sm:text-sm">
@@ -462,113 +532,115 @@ export default function HomePage() {
                 </DialogDescription>
               </DialogHeader>
               <form className="flex flex-col w-full gap-4 py-4" id="createTravelGroup" onSubmit={handleTravelGroupCreation}>
-                  <FieldGroup>
-                    <div className="flex w-full gap-4">
-                      <Field>
-                        <InputGroup className="h-auto">
-                          <InputGroupInput
-                            name="group_name"
-                            placeholder="eg. travellers009"
-                            className="text-sm sm:text-base"
-                            required
-                          />
-                          <InputGroupAddon align="block-start">
-                            <InputGroupText className="text-xs sm:text-sm">Group Name</InputGroupText>
-                          </InputGroupAddon>
-                        </InputGroup>
-                      </Field>
-
-                      <Field>
-                        <InputGroup className="h-auto">
-                          <InputGroupInput
-                            name="capacity"
-                            type="number"
-                            placeholder="eg. 3"
-                            className="text-sm sm:text-base"
-                            required
-                          />
-                          <InputGroupAddon align="block-start">
-                            <InputGroupText className="text-xs sm:text-sm">Capacity</InputGroupText>
-                          </InputGroupAddon>
-                        </InputGroup>
-                      </Field>
-                    </div>
-
-                    <div className="flex w-full gap-4">
-                      <Field>
-                        <InputGroup className="h-auto">
-                          <InputGroupInput
-                            name="start_location"
-                            placeholder="eg. FST Block Entrance"
-                            className="text-sm sm:text-base"
-                            required
-                          />
-                          <InputGroupAddon align="block-start">
-                            <InputGroupText className="text-xs sm:text-sm">Start Location</InputGroupText>
-                          </InputGroupAddon>
-                        </InputGroup>
-                      </Field>
-
-                      <Field>
-                        <InputGroup className="h-auto">
-                          <InputGroupInput
-                            name="end_location"
-                            placeholder="eg. Seacole Entrance"
-                            className="text-sm sm:text-base"
-                            required
-                          />
-                          <InputGroupAddon align="block-start">
-                            <InputGroupText className="text-xs sm:text-sm">End Location</InputGroupText>
-                          </InputGroupAddon>
-                        </InputGroup>
-                      </Field>
-                    </div>
-
+                <FieldGroup>
+                  <div className="flex w-full gap-4">
                     <Field>
                       <InputGroup className="h-auto">
                         <InputGroupInput
-                          name="departure_time"
-                          type="datetime-local"
-                          placeholder="eg. 2024-06-15 14:00"
+                          name="group_name"
+                          placeholder="eg. travellers009"
                           className="text-sm sm:text-base"
                           required
                         />
                         <InputGroupAddon align="block-start">
-                          <InputGroupText className="text-xs sm:text-sm">Departure Time</InputGroupText>
+                          <InputGroupText className="text-xs sm:text-sm">Group Name</InputGroupText>
                         </InputGroupAddon>
                       </InputGroup>
                     </Field>
 
-                    <Field orientation="horizontal">
-                      <Checkbox
-                        id="request_escorts"
-                        name="request_escorts"
-                        defaultChecked={requestingEscort}
-                        onCheckedChange={(v: boolean) => setRequestingEscort(v)}
-                        value={requestingEscort ? "on" : "off"}
-                      />
-                      <FieldContent>
-                        <FieldLabel htmlFor="request_escorts">
-                          Request Escort(s)?
-                        </FieldLabel>
-                      </FieldContent>
+                    <Field>
+                      <InputGroup className="h-auto">
+                        <InputGroupInput
+                          name="capacity"
+                          type="number"
+                          placeholder="eg. 3"
+                          className="text-sm sm:text-base"
+                          required
+                        />
+                        <InputGroupAddon align="block-start">
+                          <InputGroupText className="text-xs sm:text-sm">Capacity</InputGroupText>
+                        </InputGroupAddon>
+                      </InputGroup>
+                    </Field>
+                  </div>
+
+                  <div className="flex w-full gap-4">
+                    <Field>
+                      <InputGroup className="h-auto">
+                        <InputGroupInput
+                          name="start_location"
+                          placeholder="eg. FST Block Entrance"
+                          className="text-sm sm:text-base"
+                          required
+                        />
+                        <InputGroupAddon align="block-start">
+                          <InputGroupText className="text-xs sm:text-sm">Start Location</InputGroupText>
+                        </InputGroupAddon>
+                      </InputGroup>
                     </Field>
 
-                    { requestingEscort && <>
-                      <Field orientation="horizontal">
-                        <span className="text-xs sm:text-sm text-muted-foreground">
-                          Requesting escorts will notify the campus security team to join your group for added safety. Please note that escorts may not always be available.
-                        </span>
-                      </Field>
-                    </>}
+                    <Field>
+                      <InputGroup className="h-auto">
+                        <InputGroupInput
+                          name="end_location"
+                          placeholder="eg. Seacole Entrance"
+                          className="text-sm sm:text-base"
+                          required
+                        />
+                        <InputGroupAddon align="block-start">
+                          <InputGroupText className="text-xs sm:text-sm">End Location</InputGroupText>
+                        </InputGroupAddon>
+                      </InputGroup>
+                    </Field>
+                  </div>
 
-                  </FieldGroup>
-                </form>
+                  <Field>
+                    <InputGroup className="h-auto">
+                      <InputGroupInput
+                        name="departure_time"
+                        type="datetime-local"
+                        placeholder="eg. 2024-06-15 14:00"
+                        className="text-sm sm:text-base"
+                        required
+                      />
+                      <InputGroupAddon align="block-start">
+                        <InputGroupText className="text-xs sm:text-sm">Departure Time</InputGroupText>
+                      </InputGroupAddon>
+                    </InputGroup>
+                  </Field>
+
+                  <Field orientation="horizontal">
+                    <Checkbox
+                      id="request_escorts"
+                      name="request_escorts"
+                      defaultChecked={requestingEscort}
+                      onCheckedChange={(v: boolean) => setRequestingEscort(v)}
+                      value={requestingEscort ? "on" : "off"}
+                    />
+                    <FieldContent>
+                      <FieldLabel htmlFor="request_escorts">
+                        Request Escort(s)?
+                      </FieldLabel>
+                    </FieldContent>
+                  </Field>
+
+                  {requestingEscort && <>
+                    <span className="text-xs sm:text-sm text-muted-foreground">Please note that escorts may not always be available.</span>
+
+                    <div className="flex gap-2 items-center">
+                      <RequestEscort escortUsers={availableEscorts} specificEscorts={specificEscorts} setSpecificEscorts={setSpecificEscorts} />
+                    </div>
+                  </>}
+
+                </FieldGroup>
+              </form>
               <DialogFooter>
-                <DialogClose asChild>
-                  <Button variant="outline" type="reset" form="createTravelGroup">Cancel</Button>
-                </DialogClose>
-                 <Button variant="default" type="submit" form="createTravelGroup">Create</Button>
+                <div className="flex gap-2 w-full justify-between">
+                  <DialogClose asChild>
+                    <Button variant="outline" type="reset" form="createTravelGroup">Cancel</Button>
+                  </DialogClose>
+                  <Button variant="default" type="submit" form="createTravelGroup">Create</Button>
+                </div>
               </DialogFooter>
             </DialogContent>
           </Dialog>
