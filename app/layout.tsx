@@ -19,7 +19,7 @@ export const metadata: Metadata = {
   },
 
   description:
-    "Safe, reliable, and convenient campus escort services for students and staff at The University of the West Indies. Book rides, request assistance, and travel safely around campus.",
+    "Safe, reliable, and convenient campus escort services for students at The University of the West Indies. Book rides, request assistance, and travel safely around campus.",
 
   applicationName: "UWI Campus Escort",
 
@@ -40,12 +40,16 @@ export const metadata: Metadata = {
 
   authors: [
     {
-      name: "UWI Campus Escort",
+      name: "UWI Mona Faculty of Science and Technology",
+    },
+
+    {
+      name: "Simon Smith",
     },
   ],
 
-  creator: "UWI Campus Escort",
-  publisher: "UWI Campus Escort",
+  creator: "Simon Smith",
+  publisher: "UWI Mona Faculty of Science and Technology",
 
   alternates: {
     canonical: "/",
@@ -71,7 +75,7 @@ export const metadata: Metadata = {
     siteName: "UWI Campus Escort",
     title: "UWI Campus Escort",
     description:
-      "Safe and reliable campus escort services for students and staff at The University of the West Indies.",
+      "Safe and reliable campus escort services for students at The University of the West Indies.",
     images: [
       {
         url: "/og-image.png",
