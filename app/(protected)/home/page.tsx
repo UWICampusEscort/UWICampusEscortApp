@@ -13,6 +13,7 @@ import { useEffect, useRef, useState } from "react";
 import { toast } from "react-toastify";
 import { Profile } from "../profile/page";
 import RequestEscortSearch from "./requestescortsearch";
+import { createTravelGroup } from "@/app/actions";
 
 type TravelGroupUserData = {
   id: string;
@@ -431,23 +432,30 @@ export default function HomePage() {
     const channel = db.channel('public:groups').on('postgres_changes', { event: '*', schema: 'public', table: 'groups' }, payload => {
       // update/add only the affected record
       const updatedGroup = payload.new as TravelGroupData;
-      setGroups(prevGroups => {
-        const index = prevGroups.findIndex(group => group.id === updatedGroup.id);
-        var newGroups: TravelGroupData[] = [];
+      if (payload.eventType === 'DELETE') {
+        setGroups(prevGroups => prevGroups.filter(group => group.id !== payload.old.id));
+      }
+      else
+        setGroups(prevGroups => {
+          const index = prevGroups.findIndex(group => group.id === updatedGroup.id);
+          var newGroups: TravelGroupData[] = [];
 
-        if (index !== -1) {
-          // Update existing group
-          newGroups = [...prevGroups];
-          newGroups[index] = updatedGroup;
-        } else {
-          // Add new group
-          newGroups = [...prevGroups, updatedGroup];
-        }
+          if (index !== -1) {
+            // Update existing group
+            newGroups = [...prevGroups];
+            newGroups[index] = updatedGroup;
+          } else {
+            // Add new group
+            newGroups = [...prevGroups, updatedGroup];
+          }
 
-        return newGroups;
-      });
+          return newGroups;
+        });
 
       // Rebuild the idToUserData map for the updated group by fetching user data from the profiles table
+      if (payload.eventType === 'DELETE')
+        return;
+
       db.from("profiles")
         .select("*")
         .in("id", Array.from(new Set([...updatedGroup.members, ...updatedGroup.escorts, ...updatedGroup.requested_escorts])))
@@ -491,26 +499,24 @@ export default function HomePage() {
     const departureTime = formData.get("departure_time") as string;
     const requestEscorts = formData.get("request_escorts") === "on";
 
-    const db = createClient();
-    const { error } = await db.from("groups").insert([{
-      name: groupName,
-      capacity: capacity,
-      start_location: startLocation,
-      end_location: endLocation,
-      departure_time: new Date(departureTime).toISOString(),
-      members: [userId],
-      requested_escorts: requestEscorts ? specificEscorts : [],
-      need_escort: requestEscorts,
-    }]);
+    const { success, error } = await createTravelGroup({
+      groupName,
+      capacity,
+      startLocation,
+      endLocation,
+      departureTime,
+      requestEscorts,
+      userId,
+      specificEscorts
+    });
 
-    if (error) {
-      console.error('Error creating travel group:', error);
-      toast.error('Error creating travel group. Please try again.\n' + error.message);
-    }
-    else {
-      setSpecificEscorts([]);
-      setRequestingEscort(false);
+    if (success) {
       setIsCreateGroupOpen(false);
+      setRequestingEscort(false);
+      setSpecificEscorts([]);
+    } else {
+      toast.error(`Failed to create travel group: ${error}`);
+      console.log(error)
     }
   };
 
