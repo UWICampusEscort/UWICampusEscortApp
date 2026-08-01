@@ -31,6 +31,8 @@ type TravelGroupData = {
   created_by: string;
   requested_escorts: Array<string>;
   alive: boolean;
+  rejected_escorts: Array<string>;
+  banned_members: Array<string>;
   idToUserData: Map<string, TravelGroupUserData>;
 }
 
@@ -53,6 +55,8 @@ const has_departed = (time: string) => {
 const TravelGroup = ({ data, current_user }: { data: TravelGroupData, current_user: string }) => {
   const [time, setTime] = useState<string>('');
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [confirmingDestroy, setConfirmingDestroy] = useState(false);
+  const [confirmingBan, setConfirmingBan] = useState("");
   const dismissConfirm = useRef<() => void>(() => {});
 
   const updateTime = () => {
@@ -110,6 +114,27 @@ const TravelGroup = ({ data, current_user }: { data: TravelGroupData, current_us
     }
   }
 
+  const ban = async (memberId: string) => {
+    if (current_user !== data.created_by) {
+      toast.error('Only the group owner can ban members.');
+      return;
+    }
+
+    const db = createClient();
+    const { data: success, error } = await db
+      .rpc('ban_group_member', {
+        group_id: data.id,
+        member: memberId,
+      });
+
+    if (error) {
+      console.error('Error executing query:', error);
+      toast.error('Error banning member. Please try again.\n' + error.message);
+    } else if (success !== true) {
+      toast.error('Failed to ban member.');
+    }
+  }
+
   const rejectEscort = async (escortId: string) => {
     if (current_user !== data.created_by) {
       toast.error('Only the group owner can reject escorts.');
@@ -137,17 +162,15 @@ const TravelGroup = ({ data, current_user }: { data: TravelGroupData, current_us
       return;
     }
 
-    if (window.confirm("Are you sure you want to destroy this group? This action cannot be undone.")) {
-      const db = createClient();
-      const { data: _, error } = await db.from("groups")
-        .update({ alive: false })
-        .eq("id", data.id);
-      if (error) {
-        console.error('Error destroying group:', error);
-        toast.error('Error destroying group. Please try again.\n' + error.message);
-      }
-      setIsDetailsOpen(false);
+    const db = createClient();
+    const { data: _, error } = await db.from("groups")
+      .update({ alive: false })
+      .eq("id", data.id);
+    if (error) {
+      console.error('Error destroying group:', error);
+      toast.error('Error destroying group. Please try again.\n' + error.message);
     }
+    setIsDetailsOpen(false);
   }
 
   return (
@@ -179,64 +202,83 @@ const TravelGroup = ({ data, current_user }: { data: TravelGroupData, current_us
             <Button variant={"secondary"} size={"sm"} className="w-full" disabled>
               Already Joined
             </Button>
-            :
-            <Button variant={"secondary"} size={"sm"} className="w-full" onClick={joinGroup}>
-              Join Group
-            </Button>
+            : ( data.banned_members.includes(current_user) ?
+              <Button variant={"destructive"} size={"sm"} className="w-full" disabled>
+                Banned from Group
+              </Button>
+              :
+              <Button variant={"secondary"} size={"sm"} className="w-full" onClick={joinGroup}>
+                Join Group
+              </Button>
+            )
           }
 
           <Dialog open={isDetailsOpen} onOpenChange={setIsDetailsOpen}>
             <DialogTrigger asChild>
               <Button variant={"outline"} size={"sm"} className="w-full">Details</Button>
             </DialogTrigger>
-            <DialogContent className="min-w-[65vw]">
+            <DialogContent className="w-[92vw] sm:w-full sm:max-w-2xl max-h-[85vh] overflow-x-hidden overflow-y-auto scrollbar-thin">
               <DialogHeader>
                 <DialogTitle className="text-sm sm:text-base">{data.name}</DialogTitle>
                 <DialogDescription className="text-xs sm:text-sm" asChild>
                   <div className="flex flex-col gap-2">
-                    <div className="flex flex-col sm:flex-row justify-between overflow-x-auto scrollbar-none">
-                      <span className="text-sm font-semibold">{`${data.start_location} -> ${data.end_location}`}</span>
-                      <span className="text-sm text-muted-foreground font-normal min-w-fit">{time}</span>
+                    <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
+                      <span className="text-sm font-semibold min-w-0 flex-1 truncate">
+                        {`${data.start_location} -> ${data.end_location}`}
+                      </span>
+                      <span className="text-sm text-muted-foreground font-normal shrink-0">{time}</span>
                     </div>
 
                     { (data.escorts.length > 0 || data.requested_escorts.length > 0) && <>
                       <span className="text-sm mt-2">Escorts ({data.escorts.length})</span>
-                      <div className="h-48 overflow-y-auto border inset border-border rounded-md p-1 scrollbar-thin">
+                      <div className="h-48 overflow-y-auto overflow-x-hidden border inset border-border rounded-md p-1 scrollbar-thin">
                         {Array.from(new Set([...data.escorts, ...data.requested_escorts])).map((escortId) => {
                           return <div key={escortId} className="flex items-center gap-2 p-2">
-                            <Avatar className="h-7 w-7 border-2 border-primary-foreground">
+                            <Avatar className="h-7 w-7 shrink-0 border-2 border-primary-foreground">
                               <AvatarImage src={data.idToUserData?.get(escortId)?.avatar_url} alt={data.name} />
                               <AvatarFallback className="text-xs">{getInitials(data.idToUserData?.get(escortId)?.name || "Unknown")}</AvatarFallback>
                             </Avatar>
-                            <span className="text-sm">{data.idToUserData?.get(escortId)?.name || "Unknown"}</span>
+                            <span className="text-sm min-w-0 flex-1 truncate">
+                              {data.idToUserData?.get(escortId)?.name || "Unknown"}
+                            </span>
 
                             { current_user !== escortId && data.escorts.includes(escortId) &&
-                              <Button variant={"destructive"} size={"sm"} className="ml-auto" disabled={current_user !== data.created_by} onClick={() => rejectEscort(escortId)}>
+                              <Button variant={"destructive"} size={"sm"} className="ml-auto shrink-0" disabled={current_user !== data.created_by} onClick={() => rejectEscort(escortId)}>
                                 {current_user === data.created_by ? "Reject" : "Reject (Owner Only)"}
                               </Button>
                             }
 
-                            { !data.escorts.includes(escortId) && <Badge variant={"default"}>Requested</Badge> }
+                            { !data.escorts.includes(escortId) && <Badge variant={"default"} className="shrink-0">Requested</Badge> }
                           </div>
                         })}
                       </div>
                     </>}
-                    
+
                     <span className="text-sm mt-2">Members ({data.members.length}/{data.capacity})</span>
-                    <div className="h-48 overflow-y-auto border inset border-border rounded-md p-1 scrollbar-thin">
+                    <div className="h-48 overflow-y-auto overflow-x-hidden border inset border-border rounded-md p-1 scrollbar-thin">
                       {data.members.map((memberId) => {
                         return <div key={memberId} className="flex items-center gap-2 p-2">
-                          <Avatar className="h-7 w-7 border-2 border-primary-foreground">
+                          <Avatar className="h-7 w-7 shrink-0 border-2 border-primary-foreground">
                             <AvatarImage src={data.idToUserData?.get(memberId)?.avatar_url} alt={data.name} />
                             <AvatarFallback className="text-xs">{getInitials(data.idToUserData?.get(memberId)?.name || "Unknown")}</AvatarFallback>
                           </Avatar>
-                          <span className="text-sm">{data.idToUserData?.get(memberId)?.name || "Unknown"}</span>
 
-                          { current_user !== memberId &&
-                            <Button variant={"destructive"} size={"sm"} className="ml-auto" disabled={current_user !== data.created_by} onClick={() => kick(memberId)}>
-                              {current_user === data.created_by ? "Kick" : "Kick (Owner Only)"}
-                            </Button>
-                          }
+                          <span className="text-sm line-clamp-1">
+                            {data.idToUserData?.get(memberId)?.name || "~Unknown"}
+                          </span>
+
+                          { current_user !== memberId && current_user === data.created_by && <div className="flex gap-2 ml-auto shrink-0">
+                              <Button variant={"destructive"} size={"sm"} onClick={() => kick(memberId)}>Kick</Button>
+                              <Button variant={"destructive"} size={"sm"} onClick={() => {
+                                if (confirmingBan === memberId) {
+                                  ban(memberId);
+                                  setConfirmingBan("");
+                                } else {
+                                  setConfirmingBan(memberId);
+                                  setTimeout(() => setConfirmingBan(""), 3000);
+                                }
+                              }}>{confirmingBan === memberId ? "Are you sure?" : "Ban"}</Button>
+                          </div>}
                         </div>
                       })}
                     </div>
@@ -244,16 +286,23 @@ const TravelGroup = ({ data, current_user }: { data: TravelGroupData, current_us
                 </DialogDescription>
               </DialogHeader>
 
-
-
               <DialogFooter>
-                { current_user === data.created_by &&
-                  <Button variant="destructive" size="sm" onClick={destroyGroup}>Destroy</Button>
-                }
+                <div className="flex gap-2 w-full justify-between">
+                  { current_user === data.created_by &&
+                    <Button variant="destructive" size="sm" onClick={() => {
+                      if (confirmingDestroy)
+                        destroyGroup();
+                      else {
+                        setConfirmingDestroy(true);
+                        setTimeout(() => setConfirmingDestroy(false), 3000);
+                      }
+                    }}>{confirmingDestroy ? "Are you sure?" : "Destroy"}</Button>
+                  }
 
-                <DialogClose asChild>
-                  <Button variant="outline">Close</Button>
-                </DialogClose>
+                  <DialogClose asChild>
+                    <Button variant="outline">Close</Button>
+                  </DialogClose>
+                </div>
               </DialogFooter>
             </DialogContent>
           </Dialog>
