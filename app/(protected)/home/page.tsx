@@ -14,6 +14,7 @@ import { toast } from "react-toastify";
 import { Profile } from "../profile/page";
 import RequestEscortSearch from "./requestescortsearch";
 import { createTravelGroup } from "@/app/actions";
+import Link from "next/link";
 
 type TravelGroupUserData = {
   id: string;
@@ -191,8 +192,10 @@ const TravelGroup = ({ data, current_user }: { data: TravelGroupData, current_us
           <AvatarGroup className="overflow-x-auto scrollbar-none">
             {data.members.map((memberId) => {
               return <Avatar className="h-7 w-7 border-2 border-primary-foreground" key={memberId}>
-                <AvatarImage src={data.idToUserData?.get(memberId)?.avatar_url} alt={data.name} />
-                <AvatarFallback className="text-xs">{getInitials(data.idToUserData?.get(memberId)?.name || "Unknown")}</AvatarFallback>
+                <Link href={`/profile/${memberId}`} className="flex items-center justify-center w-full h-full">
+                  <AvatarImage src={data.idToUserData?.get(memberId)?.avatar_url} alt={data.name} />
+                  <AvatarFallback className="text-xs">{getInitials(data.idToUserData?.get(memberId)?.name || "Unknown")}</AvatarFallback>
+                </Link>
               </Avatar>
             })}
           </AvatarGroup>
@@ -237,16 +240,17 @@ const TravelGroup = ({ data, current_user }: { data: TravelGroupData, current_us
                     <div className="h-48 overflow-y-auto overflow-x-hidden border inset border-border rounded-md p-1 scrollbar-thin">
                       {Array.from(new Set([...data.escorts, ...data.requested_escorts])).map((escortId) => {
                         return <div key={escortId} className="flex items-center gap-2 p-2">
-                          <Avatar className="h-7 w-7 shrink-0 border-2 border-primary-foreground">
-                            <AvatarImage src={data.idToUserData?.get(escortId)?.avatar_url} alt={data.name} />
-                            <AvatarFallback className="text-xs">{getInitials(data.idToUserData?.get(escortId)?.name || "Unknown")}</AvatarFallback>
-                          </Avatar>
-                          <span className="text-sm min-w-0 flex-1 truncate">
-                            {data.idToUserData?.get(escortId)?.name || "Unknown"}
-                          </span>
-
+                          <Link href={`/profile/${escortId}`} className="flex gap-2 items-center w-full h-full">
+                            <Avatar className="h-7 w-7 shrink-0 border-2 border-primary-foreground">
+                              <AvatarImage src={data.idToUserData?.get(escortId)?.avatar_url} alt={data.name} />
+                              <AvatarFallback className="text-xs">{getInitials(data.idToUserData?.get(escortId)?.name || "Unknown")}</AvatarFallback>
+                            </Avatar>
+                            <span className="text-sm min-w-0 flex-1 truncate">
+                              {data.idToUserData?.get(escortId)?.name || "Unknown"}
+                            </span>
+                          </Link>
                           {current_user !== escortId && data.escorts.includes(escortId) &&
-                            <Button variant={"destructive"} size={"sm"} className="ml-auto shrink-0" disabled={current_user !== data.created_by} onClick={() => rejectEscort(escortId)}>
+                            <Button variant={"destructive"} size={"sm"} className="ml-auto shrink-0" disabled={current_user !== data.created_by} onClick={() => { rejectEscort(escortId) }}>
                               {current_user === data.created_by ? "Reject" : "Reject (Owner Only)"}
                             </Button>
                           }
@@ -261,15 +265,16 @@ const TravelGroup = ({ data, current_user }: { data: TravelGroupData, current_us
                   <div className="h-48 overflow-y-auto overflow-x-hidden border inset border-border rounded-md p-1 scrollbar-thin">
                     {data.members.map((memberId) => {
                       return <div key={memberId} className="flex items-center gap-2 p-2">
-                        <Avatar className="h-7 w-7 shrink-0 border-2 border-primary-foreground">
-                          <AvatarImage src={data.idToUserData?.get(memberId)?.avatar_url} alt={data.name} />
-                          <AvatarFallback className="text-xs">{getInitials(data.idToUserData?.get(memberId)?.name || "Unknown")}</AvatarFallback>
-                        </Avatar>
+                        <Link href={`/profile/${memberId}`} className="flex gap-2 items-center w-full h-full">
+                          <Avatar className="h-7 w-7 shrink-0 border-2 border-primary-foreground">
+                            <AvatarImage src={data.idToUserData?.get(memberId)?.avatar_url} alt={data.name} />
+                            <AvatarFallback className="text-xs">{getInitials(data.idToUserData?.get(memberId)?.name || "Unknown")}</AvatarFallback>
+                          </Avatar>
 
-                        <span className="text-sm line-clamp-1">
-                          {data.idToUserData?.get(memberId)?.name || "~Unknown"}
-                        </span>
-
+                          <span className="text-sm line-clamp-1">
+                            {data.idToUserData?.get(memberId)?.name || "~Unknown"}
+                          </span>
+                        </Link>
                         {current_user !== memberId && current_user === data.created_by && <div className="flex gap-2 ml-auto shrink-0">
                           <Button variant={"destructive"} size={"sm"} onClick={() => kick(memberId)}>Kick</Button>
                           <Button variant={"destructive"} size={"sm"} onClick={() => {
@@ -654,7 +659,7 @@ export default function HomePage() {
       </div>
 
       <div className="h-160 grid grid-cols-1 gap-6 md:grid-cols-2 py-12 px-4 sm:px-6 scrollbar-none overflow-y-auto">
-        {groups.filter(group => group.alive).map((group) => (has_departed(group.departure_time) ? null :
+        {groups.filter(group => group.alive).sort((a, b) => new Date(a.departure_time).getTime() - new Date(b.departure_time).getTime()).map((group) => (has_departed(group.departure_time) ? null :
           <TravelGroup key={group.id} data={group} current_user={userId} />
         ))}
       </div>
