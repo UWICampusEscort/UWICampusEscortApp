@@ -523,12 +523,17 @@ const RequestEscort = ({ escortUsers, specificEscorts, setSpecificEscorts }: { e
 export default function HomePage() {
   const [userId, setUserId] = useState<string>('');
   const [groups, setGroups] = useState<TravelGroupData[]>([]);
+  const [aliveGroups, setAliveGroups] = useState<TravelGroupData[]>([]);
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
   const [isEscortGroupOpen, setIsEscortGroupOpen] = useState(false);
   const [requestingEscort, setRequestingEscort] = useState(false);
   const [specificEscorts, setSpecificEscorts] = useState<string[]>([]);
 
   const [availableEscorts, setAvailableEscorts] = useState<Profile[]>([]);
+
+  useEffect(() => {
+    setAliveGroups(groups.filter(group => group.alive));
+  }, [groups]);
 
   const refresh = async () => {
     const db = createClient();
@@ -845,11 +850,12 @@ export default function HomePage() {
         </div>
       </div>
 
-      <div className="h-160 grid grid-cols-1 gap-6 md:grid-cols-2 py-12 px-4 sm:px-6 scrollbar-none overflow-y-auto">
-        {groups.filter(group => group.alive).sort((a, b) => new Date(a.departure_time).getTime() - new Date(b.departure_time).getTime()).map((group) => (has_departed(group.departure_time) ? null :
-          <TravelGroup key={group.id} data={group} current_user={userId} />
-        ))}
-      </div>
+      {aliveGroups.length == 0 ? <div className="w-full h-full min-h-[70vh] flex justify-center items-center"><span className="text-sm text-muted-foreground">No groups available at the moment. Create one or check back later!</span></div> :
+        <div className="h-160 grid grid-cols-1 gap-6 md:grid-cols-2 py-12 px-4 sm:px-6 scrollbar-none overflow-y-auto">
+          {aliveGroups.sort((a, b) => new Date(a.departure_time).getTime() - new Date(b.departure_time).getTime()).map((group) => (has_departed(group.departure_time) ? null :
+            <TravelGroup key={group.id} data={group} current_user={userId} />
+          ))}
+        </div>}
     </div>
   );
 }
