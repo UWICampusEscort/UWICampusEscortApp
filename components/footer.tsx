@@ -12,7 +12,7 @@ import { ThemeSwitcher } from "./theme-switcher";
 import { CAMPUS_SECURITY, CAMPUS_SECURITY_HREF, EMAIL, TELEPHONE, TELEPHONE_HREF } from "@/lib/constants";
 
 const quickLinks = [
-  { href: "/request", label: "Request Escort" },
+  { href: "/home", label: "Request Escort" },
   { href: "/trips", label: "My Trips" },
   { href: "/safety", label: "Safety Tips" },
   { href: "/faq", label: "FAQ" },
@@ -20,9 +20,8 @@ const quickLinks = [
 
 const resourceLinks = [
   { href: "/about", label: "About the Program" },
-  { href: "/volunteer", label: "Become an Escort" },
+  { href: "/profile", label: "Become an Escort" },
   { href: "/support", label: "Support" },
-  { href: "/contacts", label: "Emergency Contacts" },
 ];
 
 const legalLinks = [

@@ -45,7 +45,6 @@ import Logo from "@/app/assets/images/logo.png"
 const navLinks = [
   { href: "/home", label: "Request/Accept Escort", icon: MapPinned },
   { href: "/trips", label: "My Trips", icon: History },
-  { href: "/contacts", label: "Emergency Contacts", icon: Phone },
   { href: "/safety", label: "Safety Tips", icon: ShieldCheck },
 ];
 

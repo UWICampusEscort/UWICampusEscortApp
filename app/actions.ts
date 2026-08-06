@@ -28,7 +28,7 @@ export const createTravelGroup = async ({
         capacity: capacity,
         start_location: startLocation,
         end_location: endLocation,
-        departure_time: new Date(departureTime).toISOString(),
+        departure_time: departureTime,
         members: [userId],
         requested_escorts: requestEscorts ? specificEscorts : [],
         need_escort: requestEscorts,

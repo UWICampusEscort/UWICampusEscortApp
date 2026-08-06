@@ -771,7 +771,7 @@ export default function HomePage() {
       capacity: parseInt(formData.get("capacity") as string, 10),
       startLocation: formData.get("start_location") as string,
       endLocation: formData.get("end_location") as string,
-      departureTime: formData.get("departure_time") as string,
+      departureTime: new Date(formData.get("departure_time") as string).toISOString(),
       requestEscorts: formData.get("request_escorts") === "on",
       userId,
       specificEscorts,
