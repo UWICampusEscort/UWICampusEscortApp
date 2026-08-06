@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/card";
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
+import { redirect } from "next/navigation";
 
 const stats = [
   { label: "Free & unlimited groups", value: "$0" },
@@ -94,6 +95,20 @@ export default function Home() {
         setSignedIn(true);
     });
   }, []);
+
+  useEffect(() => {
+    // get /#access_token=? variable from the # section of the url and alert it
+    const parts = window.location.hash.substring(1).split("&"); // key=value
+    // convert to dictionary
+    const dict = parts.map(part => {
+      const [key, value] = part.split("=");
+      return { [key]: value };
+    }).reduce((acc, dict) => ({ ...acc, ...dict }), {} as Record<string, string>);
+
+    if (dict["type"] && (dict["access_token"] || dict["token"])) {
+      redirect(`/auth/confirm?token_hash=${dict["access_token"] || dict["token"]}&type=${dict["type"]}&next=/home`)
+    }
+  }, [])
 
   return (
     <main className="flex min-h-screen w-full flex-col items-center">
