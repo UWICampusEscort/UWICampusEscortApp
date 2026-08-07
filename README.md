@@ -102,6 +102,35 @@ If you wish to just develop locally and not deploy to Vercel, [follow the steps 
 
 Please file feedback and issues over on the [Supabase GitHub org](https://github.com/supabase/supabase/issues/new/choose).
 
+## PWA and push notifications
+
+The app now includes a manifest-backed installable PWA, a service worker at `/sw.js`, and a reusable push-notification layer that can be reached from both client and server code.
+
+Add these environment variables to `.env.local` before using push delivery:
+
+```env
+NEXT_PUBLIC_VAPID_PUBLIC_KEY=[YOUR WEB PUSH PUBLIC KEY]
+WEB_PUSH_PRIVATE_KEY=[YOUR WEB PUSH PRIVATE KEY]
+WEB_PUSH_SUBJECT=mailto:uwi.campusescort@gmail.com
+SUPABASE_SERVICE_ROLE_KEY=[YOUR SUPABASE SERVICE ROLE KEY]
+```
+
+Create the subscription table in Supabase by running the SQL in [supabase/migrations/20260806_create_push_subscriptions.sql](supabase/migrations/20260806_create_push_subscriptions.sql).
+
+Client usage is available through the root provider hook:
+
+```tsx
+import { usePushNotifications } from "@/components/push-notifications-provider";
+
+const { subscribe, unsubscribe, sendNotification, isSubscribed, permission } = usePushNotifications();
+```
+
+Server-side delivery for any feature flow is available through [lib/push/server.ts](lib/push/server.ts):
+
+```ts
+import { sendPushNotificationToUser, sendPushNotificationToUsers } from "@/lib/push/server";
+```
+
 ## More Supabase examples
 
 - [Next.js Subscription Payments Starter](https://github.com/vercel/nextjs-subscription-payments)

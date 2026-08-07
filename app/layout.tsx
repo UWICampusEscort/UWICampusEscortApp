@@ -1,9 +1,10 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Geist } from "next/font/google";
 import { ThemeProvider } from "next-themes";
 import "./globals.css";
 import { Footer } from "@/components/footer";
 import Navbar from "@/components/navbar";
+import { PushNotificationsProvider } from "@/components/push-notifications-provider";
 import { ToastContainer } from "react-toastify";
 import { APP_NAME } from "@/lib/constants";
 
@@ -109,7 +110,7 @@ export const metadata: Metadata = {
     shortcut: "/favicon.ico",
   },
 
-  manifest: "/site.webmanifest",
+  manifest: "/manifest.webmanifest",
 
   category: "Transportation",
 
@@ -134,6 +135,11 @@ export const metadata: Metadata = {
   },
 };
 
+export const viewport: Viewport = {
+  themeColor: "#0f172a",
+  colorScheme: "light",
+};
+
 const geistSans = Geist({
   variable: "--font-geist-sans",
   display: "swap",
@@ -154,10 +160,12 @@ export default function RootLayout({
           enableSystem
           disableTransitionOnChange
         >
-          <Navbar />
-          {children}
-          <Footer />
-          <ToastContainer />
+          <PushNotificationsProvider>
+            <Navbar />
+            {children}
+            <Footer />
+            <ToastContainer />
+          </PushNotificationsProvider>
         </ThemeProvider>
       </body>
     </html>

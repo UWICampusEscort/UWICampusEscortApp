@@ -31,6 +31,7 @@ import {
   VaultIcon,
   ChevronDownIcon,
   CalendarClock,
+  Bell,
 } from "lucide-react";
 
 import { createClient } from "@/lib/supabase/client";
@@ -45,8 +46,9 @@ import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Switch } from "@/components/ui/switch";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
-import { formatDatePPP } from "@/lib/utils";
+import { formatDatePPPMin } from "@/lib/utils";
 import { PhoneInput } from "@/components/reui/phone-input";
+import { usePushNotifications } from "@/components/push-notifications-provider";
 
 type IdentityStatus = "unverified" | "pending" | "verified" | "failed";
 
@@ -74,6 +76,8 @@ function getInitials(name: string) {
 }
 
 export default function ProfilePage() {
+  const notifications = usePushNotifications();
+
   const supabase = useMemo(() => createClient(), []);
   const router = useRouter();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -95,6 +99,8 @@ export default function ProfilePage() {
   const [avatarUploading, setAvatarUploading] = useState(false);
 
   const [resendingEmail, setResendingEmail] = useState(false);
+
+  const [allowNotifications, setAllowNotifications] = useState(false);
 
   const [savedPhone, setSavedPhone] = useState("");
   const [phone, setPhone] = useState("");
@@ -124,6 +130,9 @@ export default function ProfilePage() {
 
     setSavedPhone(existing.phone ?? "");
     setPhone(existing.phone ?? "");
+
+    setAllowNotifications(existing.send_notifications);
+
     setLoading(false);
   }, [supabase]);
 
@@ -141,9 +150,9 @@ export default function ProfilePage() {
   useEffect(() => {
     if (!error && !success) return;
     if (error)
-        toast.error(error)
+      toast.error(error)
     if (success)
-        toast.success(success)
+      toast.success(success)
 
     const timer = setTimeout(() => {
       setError(null);
@@ -151,6 +160,15 @@ export default function ProfilePage() {
     }, 5000);
     return () => clearTimeout(timer);
   }, [error, success]);
+
+  useEffect(() => {
+    if (!user || !profile) return;
+
+    if (allowNotifications)
+      notifications.subscribe();
+    else notifications.unsubscribe();
+
+  }, [user, profile, allowNotifications]);
 
   const emailVerified = Boolean(user?.email_confirmed_at);
   const phoneVerified = Boolean(user?.phone_confirmed_at) || Boolean(profile?.phone_verified);
@@ -383,7 +401,7 @@ export default function ProfilePage() {
       )}
 
       {/* Security checklist */}
-      <Card  className="mb-6">
+      <Card className="mb-6">
         <CardHeader>
           <CardTitle className="text-base">Security checklist</CardTitle>
           <CardDescription>
@@ -455,12 +473,12 @@ export default function ProfilePage() {
                 className="flex-3 text-sm"
               />
 
-              { fullName !== (profile?.full_name ?? "") &&
+              {fullName !== (profile?.full_name ?? "") &&
                 <Button
-                    onClick={handleSaveName}
-                    disabled={savingName || fullName === (profile?.full_name ?? "")}
+                  onClick={handleSaveName}
+                  disabled={savingName || fullName === (profile?.full_name ?? "")}
                 >
-                    {savingName ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+                  {savingName ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
                 </Button>
               }
             </Field>
@@ -470,44 +488,56 @@ export default function ProfilePage() {
                 <Mail className="h-4 w-4 text-muted-foreground" /> Email
               </FieldLabel>
               {emailVerified ? (
-                  <Badge variant="secondary" className="gap-1">
-                    <ShieldCheck className="h-3 w-3" /> Verified
-                  </Badge>
-                ) : (
-                  <Badge variant="outline" className="gap-1 text-amber-600">
-                    <ShieldAlert className="h-3 w-3" /> Unverified
-                  </Badge>
-                )}
-                {!emailVerified && (
-                  <Button
-                    size="sm"
-                    variant="outline"
-                    onClick={handleResendEmailVerification}
-                    disabled={resendingEmail}
-                  >
-                    {resendingEmail ? (
-                      <Loader2 className="h-4 w-4 animate-spin" />
-                    ) : (
-                      "Resend verification email"
-                    )}
-                  </Button>
-                )}
+                <Badge variant="secondary" className="gap-1">
+                  <ShieldCheck className="h-3 w-3" /> Verified
+                </Badge>
+              ) : (
+                <Badge variant="outline" className="gap-1 text-amber-600">
+                  <ShieldAlert className="h-3 w-3" /> Unverified
+                </Badge>
+              )}
+              {!emailVerified && (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={handleResendEmailVerification}
+                  disabled={resendingEmail}
+                >
+                  {resendingEmail ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : (
+                    "Resend verification email"
+                  )}
+                </Button>
+              )}
             </Field>
 
             <Field orientation="horizontal">
               <FieldLabel htmlFor="phone-number" className="w-16">
                 <Phone className="h-4 w-4 text-muted-foreground" /> Phone number
               </FieldLabel>
-              
+
               <div className="flex flex-col gap-2 sm:flex-row flex-3">
                 <PhoneInput placeholder="Enter phone number" value={phone} onChange={(e) => setPhone(e)} className="w-full" />
 
-                { savedPhone !== phone &&
-                    <Button onClick={handleSavePhoneNumber} disabled={phoneLoading || !phone}>
-                        {phoneLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
-                    </Button>
+                {savedPhone !== phone &&
+                  <Button onClick={handleSavePhoneNumber} disabled={phoneLoading || !phone}>
+                    {phoneLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : "Save"}
+                  </Button>
                 }
               </div>
+            </Field>
+
+            {/* Allow notifications toggle */}
+            <Field orientation="horizontal">
+              <FieldLabel htmlFor="allow-notifications" className="w-16">
+                <Bell className="h-4 w-4 text-muted-foreground" /> Allow notifications
+              </FieldLabel>
+              <Switch
+                id="allow-notifications"
+                checked={allowNotifications}
+                onCheckedChange={(checked) => setAllowNotifications(checked)}
+              />
             </Field>
 
             <Field orientation="horizontal">
@@ -516,7 +546,7 @@ export default function ProfilePage() {
               </FieldLabel>
               <Popover>
                 <PopoverTrigger asChild>
-                  <Button variant={"outline"} data-empty={!profile?.graduation_date} className="w-62 justify-between text-left font-normal data-[empty=true]:text-muted-foreground">{profile?.graduation_date ? formatDatePPP(new Date(profile.graduation_date)) : <span>Pick a date</span>}<ChevronDownIcon data-icon="inline-end" /></Button>
+                  <Button variant={"outline"} data-empty={!profile?.graduation_date} className="min-w-62 justify-between text-left font-normal data-[empty=true]:text-muted-foreground">{profile?.graduation_date ? formatDatePPPMin(new Date(profile.graduation_date)) : <span>Pick a date</span>}<ChevronDownIcon data-icon="inline-end" /></Button>
                 </PopoverTrigger>
                 <PopoverContent className="w-auto p-0" align="start">
                   <Calendar
@@ -531,7 +561,7 @@ export default function ProfilePage() {
                 </PopoverContent>
               </Popover>
             </Field>
-          
+
             <Field orientation="horizontal">
               <FieldLabel htmlFor="be-an-escort-switch" className="w-16">
                 <VaultIcon className="h-4 w-4 text-muted-foreground" /> Be an escort {savingBeAnEscort && <Loader2 className="h-4 w-4 animate-spin" />}

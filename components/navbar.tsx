@@ -40,6 +40,8 @@ import {
 import Image from "next/image";
 
 import Logo from "@/app/assets/images/logo.png"
+import { APP_NAME } from "@/lib/constants";
+import { usePushNotifications } from "./push-notifications-provider";
 
 // Edit to match your real routes.
 const navLinks = [
@@ -55,6 +57,8 @@ export default function Navbar() {
   const [loading, setLoading] = useState(true);
   const [mobileOpen, setMobileOpen] = useState(false);
 
+  const notifications = usePushNotifications();
+
   useEffect(() => {
     if (!hasEnvVars) {
       setLoading(false);
@@ -66,6 +70,20 @@ export default function Navbar() {
     supabase.auth.getUser().then(({ data }) => {
       setUser(data.user ?? null);
       setLoading(false);
+
+      if (data.user) {
+        supabase.from("profiles")
+          .select("send_notifications")
+          .eq("id", data.user.id)
+          .single()
+          .then(({ data: profileData }) => {
+            if (profileData?.send_notifications) {
+              notifications.subscribe().catch((error) => {
+                console.error("Error subscribing to notifications:", error);
+              });
+            }
+          });
+      }
     });
 
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
@@ -93,9 +111,9 @@ export default function Navbar() {
       <div className="w-full flex justify-between items-center p-3 px-5 text-sm">
         <div className="flex gap-8 items-center">
           <div className="flex gap-5 items-center font-semibold">
-            <Image src={Logo} className="h-10 w-10 rounded-md" alt="UWI Campus Escort Logo" />
+            <Image src={Logo} className="h-10 w-10 rounded-md" alt="Logo" />
             <Link href="/" className="font-semibold shrink-0">
-              UWI Campus Escort
+              {APP_NAME}
             </Link>
           </div>
 

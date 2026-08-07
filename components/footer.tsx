@@ -9,7 +9,7 @@ import {
   Twitter,
 } from "lucide-react";
 import { ThemeSwitcher } from "./theme-switcher";
-import { CAMPUS_SECURITY, CAMPUS_SECURITY_HREF, EMAIL, TELEPHONE, TELEPHONE_HREF } from "@/lib/constants";
+import { APP_NAME, CAMPUS_SECURITY, CAMPUS_SECURITY_HREF, EMAIL, TELEPHONE, TELEPHONE_HREF } from "@/lib/constants";
 
 const quickLinks = [
   { href: "/home", label: "Request Escort" },
@@ -62,7 +62,7 @@ export function Footer() {
           {/* Brand */}
           <div className="col-span-2 sm:col-span-3 md:col-span-1">
             <Link href="/" className="font-semibold">
-              UWI Campus Escort
+              {APP_NAME}
             </Link>
             <p className="mt-3 max-w-xs text-muted-foreground">
               A free, student-run safety escort service helping the UWI
@@ -151,7 +151,7 @@ export function Footer() {
         {/* Bottom bar */}
         <div className="mt-10 flex flex-col items-center justify-between gap-4 border-t border-t-foreground/10 pt-6 sm:flex-row">
           <p className="text-xs text-muted-foreground">
-            &copy; {2026} UWI Campus Escort. All rights
+            &copy; {2026} {APP_NAME}. All rights
             reserved.
           </p>
           <div className="flex items-center gap-4">

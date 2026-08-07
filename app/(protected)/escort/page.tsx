@@ -354,7 +354,9 @@ export default function EscortRequestsPage() {
                                 <CardHeader className="pb-3">
                                     <div className="flex items-start justify-between gap-2">
                                         <CardTitle className="text-base">{group.name || "Escort request"}</CardTitle>
-                                        <Badge variant="outline" className="shrink-0">Pending</Badge>
+                                        {!group.escorts.includes(userId) && !group.rejected_escorts.includes(userId) && (
+                                            <Badge variant="outline" className="shrink-0">Pending</Badge>
+                                        )}
                                     </div>
                                     <CardDescription className="flex items-center gap-1.5 pt-1">
                                         <MapPin className="h-3.5 w-3.5 shrink-0" />
