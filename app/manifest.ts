@@ -2,9 +2,9 @@ import type { MetadataRoute } from 'next'
 
 export default function manifest(): MetadataRoute.Manifest {
     return {
-        name: 'UWI Campus Escort',
-        short_name: 'UWI Campus Escort',
-        description: 'Safe, reliable, and convenient campus escort services for students at The University of the West Indies.',
+        name: 'FST Escort',
+        short_name: 'FST EST',
+        description: 'Safe, reliable, and convenient campus escort services for students at The University of the West Indies, Mona.',
         start_url: '/',
         display: 'standalone',
         background_color: '#fff',

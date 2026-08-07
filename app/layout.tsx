@@ -5,6 +5,7 @@ import "./globals.css";
 import { Footer } from "@/components/footer";
 import Navbar from "@/components/navbar";
 import { ToastContainer } from "react-toastify";
+import { APP_NAME } from "@/lib/constants";
 
 const defaultUrl = process.env.URL
   ? `https://${process.env.URL}`
@@ -14,14 +15,14 @@ export const metadata: Metadata = {
   metadataBase: new URL(defaultUrl),
 
   title: {
-    default: "UWI Campus Escort",
-    template: "%s | UWI Campus Escort",
+    default: APP_NAME,
+    template: `%s | ${APP_NAME}`,
   },
 
   description:
     "Safe, reliable, and convenient campus escort services for students at The University of the West Indies. Book rides, request assistance, and travel safely around campus.",
 
-  applicationName: "UWI Campus Escort",
+  applicationName: APP_NAME,
 
   keywords: [
     "UWI",
@@ -36,6 +37,10 @@ export const metadata: Metadata = {
     "UWI Mona",
     "Student Escort Service",
     "Safe Campus",
+    "FST",
+    "Faculty of Science and Technology",
+    "FST Escort",
+    "FST EST",
   ],
 
   authors: [
@@ -72,8 +77,8 @@ export const metadata: Metadata = {
     type: "website",
     locale: "en_JM",
     url: defaultUrl,
-    siteName: "UWI Campus Escort",
-    title: "UWI Campus Escort",
+    siteName: APP_NAME,
+    title: APP_NAME,
     description:
       "Safe and reliable campus escort services for students at The University of the West Indies.",
     images: [
@@ -81,27 +86,26 @@ export const metadata: Metadata = {
         url: "/og-image.png",
         width: 1200,
         height: 630,
-        alt: "UWI Campus Escort",
+        alt: APP_NAME,
       },
     ],
   },
 
   twitter: {
     card: "summary_large_image",
-    title: "UWI Campus Escort",
+    title: APP_NAME,
     description:
       "Safe, reliable campus escort services at The University of the West Indies.",
     images: ["/og-image.png"],
-    creator: "@uwicampusescort", // Remove if you don't have an X account
   },
 
   icons: {
     icon: [
       { url: "/favicon.ico" },
-      { url: "/icon-32x32.png", sizes: "32x32", type: "image/png" },
-      { url: "/icon-16x16.png", sizes: "16x16", type: "image/png" },
+      { url: "/favicon-192x192.png", sizes: "192x192", type: "image/png" },
+      { url: "/favicon-512x512.png", sizes: "512x512", type: "image/png" },
     ],
-    apple: "/apple-touch-icon.png",
+    apple: "/apple-icon.png",
     shortcut: "/favicon.ico",
   },
 
@@ -119,7 +123,7 @@ export const metadata: Metadata = {
 
   appleWebApp: {
     capable: true,
-    title: "UWI Campus Escort",
+    title: APP_NAME,
     statusBarStyle: "default",
   },
 

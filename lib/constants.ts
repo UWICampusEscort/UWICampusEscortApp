@@ -1,5 +1,5 @@
-
-
+export const APP_NAME = "FST Escort"
+export const APP_SHORT_NAME = "FST EST"
 export const EMAIL = "uwi.campusescort@gmail.com"
 export const TELEPHONE = "+1 (876) 888-8888"
 export const TELEPHONE_HREF = "+18768888888"

@@ -13,6 +13,7 @@ import {
   User as UserIcon,
   LifeBuoy,
   LogOut,
+  Luggage,
 } from "lucide-react";
 
 import { getInitials, hasEnvVars } from "@/lib/utils";
@@ -42,7 +43,8 @@ import Logo from "@/app/assets/images/logo.png"
 
 // Edit to match your real routes.
 const navLinks = [
-  { href: "/home", label: "Request/Accept Escort", icon: MapPinned },
+  { href: "/home", label: "Request Escort", icon: MapPinned },
+  { href: "/escort", label: "Missions", icon: Luggage },
   { href: "/trips", label: "My Trips", icon: History },
   { href: "/safety", label: "Safety Tips", icon: ShieldCheck },
 ];
