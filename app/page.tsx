@@ -85,7 +85,7 @@ const features = [
   },
 ];
 
-export default function Home() {
+export default function LandingPage() {
   const [signedIn, setSignedIn] = useState(false);
 
   useEffect(() => {

@@ -1,0 +1,493 @@
+"use client";
+
+import { useCallback, useEffect, useMemo, useState } from "react";
+import Link from "next/link";
+import {
+    Loader2,
+    MapPin,
+    Navigation,
+    ChevronDown,
+    Phone,
+    XCircle,
+    Ban,
+    Clock,
+    Users,
+    ShieldCheck,
+    History,
+    LogOut,
+} from "lucide-react";
+
+import { createClient } from "@/lib/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import {
+    Card,
+    CardContent,
+    CardDescription,
+    CardHeader,
+    CardTitle,
+} from "@/components/ui/card";
+import { Skeleton } from "@/components/ui/skeleton";
+import {
+    Accordion,
+    AccordionContent,
+    AccordionItem,
+    AccordionTrigger,
+} from "@/components/ui/accordion";
+import { formatDatePPP } from "@/lib/utils";
+
+type Group = {
+    id: string;
+    name: string;
+    start_location: string;
+    end_location: string;
+    capacity: number;
+    members: string[];
+    departure_time: string;
+    escorts: string[];
+    created_at: string;
+    created_by: string;
+    requested_escorts: string[];
+    alive: boolean;
+    rejected_escorts: string[];
+    banned_members: string[];
+    need_escort: boolean;
+    is_public: boolean;
+};
+
+type PersonLite = {
+    id: string;
+    full_name: string | null;
+    avatar_url: string | null;
+};
+
+type Role = "organizer" | "member" | "escort" | "requested_escort" | null;
+
+const CAMPUS_SECURITY_PHONE = "+18685551234";
+const MAX_SUGGESTIONS = 6;
+
+function getInitials(name: string) {
+    return name
+        .split(" ")
+        .filter(Boolean)
+        .map((part) => part[0])
+        .join("")
+        .slice(0, 2)
+        .toUpperCase();
+}
+
+function getRole(group: Group, userId: string): Role {
+    if (group.created_by === userId) return "organizer";
+    if (group.members.includes(userId)) return "member";
+    if (group.escorts.includes(userId)) return "escort";
+    if (group.requested_escorts.includes(userId)) return "requested_escort";
+    return null;
+}
+
+function PersonChip({ person, fallbackLabel }: { person?: PersonLite; fallbackLabel: string }) {
+    return (
+        <div className="flex items-center gap-1.5">
+            <Avatar className="h-5 w-5 shrink-0">
+                <AvatarImage src={person?.avatar_url ?? undefined} />
+                <AvatarFallback className="text-[10px]">
+                    {getInitials(person?.full_name || fallbackLabel)}
+                </AvatarFallback>
+            </Avatar>
+            <span className="truncate text-xs">{person?.full_name || fallbackLabel}</span>
+        </div>
+    );
+}
+
+function AliveBadge() {
+    return (
+        <Badge className="gap-1 bg-blue-600 text-white hover:bg-blue-600">
+            <span className="relative flex h-2 w-2">
+                <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/70" />
+                <span className="relative inline-flex h-2 w-2 rounded-full bg-white" />
+            </span>
+            Active
+        </Badge>
+    );
+}
+
+export default function TripsPage() {
+    const supabase = useMemo(() => createClient(), []);
+
+    const [userId, setUserId] = useState<string | null>(null);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState<string | null>(null);
+    const [actingId, setActingId] = useState<string | null>(null);
+
+    const [groups, setGroups] = useState<Group[]>([]);
+    const [peopleById, setPeopleById] = useState<Map<string, PersonLite>>(new Map());
+
+    const fetchGroups = useCallback(async () => {
+        const {
+            data: { user },
+        } = await supabase.auth.getUser();
+
+        if (!user) {
+            setLoading(false);
+            return;
+        }
+        setUserId(user.id);
+
+        const { data, error: fetchError } = await supabase
+            .from("groups")
+            .select("*")
+            .order("departure_time", { ascending: false });
+
+        if (fetchError) {
+            setError(fetchError.message);
+            setLoading(false);
+            return;
+        }
+
+        const rows = (data as Group[]) ?? [];
+        // RLS should already scope this to groups the user belongs to, but
+        // filter again client-side as a defensive check and to compute roles.
+        const mine = rows.filter((g) => getRole(g, user.id) !== null);
+        setGroups(mine);
+
+        const ids = new Set<string>();
+        for (const g of mine) {
+            ids.add(g.created_by);
+            g.members.forEach((id) => ids.add(id));
+            g.escorts.forEach((id) => ids.add(id));
+        }
+        ids.delete(user.id);
+
+        if (ids.size > 0) {
+            const { data: people } = await supabase
+                .from("profiles")
+                .select("id, full_name, avatar_url")
+                .in("id", Array.from(ids));
+
+            if (people) {
+                setPeopleById(new Map((people as PersonLite[]).map((p) => [p.id, p])));
+            }
+        }
+
+        setLoading(false);
+    }, [supabase]);
+
+    useEffect(() => {
+        fetchGroups();
+    }, [fetchGroups]);
+
+    useEffect(() => {
+        if (!userId) return;
+
+        const channel = supabase
+            .channel("groups-changes")
+            .on("postgres_changes", { event: "*", schema: "public", table: "groups" }, () =>
+                fetchGroups()
+            )
+            .subscribe();
+
+        return () => {
+            supabase.removeChannel(channel);
+        };
+    }, [supabase, userId, fetchGroups]);
+
+    const currentGroups = groups.filter((g) => g.alive);
+    const pastGroups = groups.filter((g) => !g.alive);
+
+    const suggestions = useMemo(() => {
+        const counts = new Map<string, number>();
+        for (const g of groups) {
+            for (const loc of [g.start_location, g.end_location]) {
+                if (!loc) continue;
+                counts.set(loc, (counts.get(loc) ?? 0) + 1);
+            }
+        }
+        return Array.from(counts.entries())
+            .sort((a, b) => b[1] - a[1])
+            .slice(0, MAX_SUGGESTIONS)
+            .map(([loc]) => loc);
+    }, [groups]);
+
+    const handleLeaveOrEnd = async (group: Group) => {
+        if (!userId) return;
+        const role = getRole(group, userId);
+        if (!role) return;
+
+        setActingId(group.id);
+        setError(null);
+
+        let update: Partial<Group> = {};
+        if (role === "organizer") update = { alive: false };
+        else if (role === "member") update = { members: group.members.filter((m) => m !== userId) };
+        else if (role === "escort") update = { escorts: group.escorts.filter((e) => e !== userId) };
+        else if (role === "requested_escort")
+            update = { requested_escorts: group.requested_escorts.filter((e) => e !== userId) };
+
+        const { error: updateError } = await supabase.from("groups").update(update).eq("id", group.id);
+
+        if (updateError) setError(updateError.message);
+        else await fetchGroups();
+        setActingId(null);
+    };
+
+    const leaveLabel = (role: Role) => {
+        switch (role) {
+            case "organizer":
+                return "End trip";
+            case "member":
+                return "Leave group";
+            case "escort":
+                return "Stop escorting";
+            case "requested_escort":
+                return "Cancel request";
+            default:
+                return "Leave";
+        }
+    };
+
+    if (loading) {
+        return (
+            <div className="mx-auto w-full max-w-4xl space-y-4 px-4 py-10 sm:px-6">
+                <Skeleton className="h-6 w-32" />
+                <Skeleton className="h-16 w-full rounded-lg" />
+                <Skeleton className="h-40 w-full rounded-lg" />
+                <Skeleton className="h-24 w-full rounded-lg" />
+            </div>
+        );
+    }
+
+    if (!userId) {
+        return (
+            <div className="mx-auto w-full max-w-4xl px-4 py-24 text-center">
+                <p className="text-muted-foreground">Sign in to see your trips.</p>
+                <Button asChild className="mt-4">
+                    <Link href="/auth/login">Sign in</Link>
+                </Button>
+            </div>
+        );
+    }
+
+    return (
+        <div className="mx-auto w-full max-w-4xl space-y-8 px-4 py-8 sm:px-6">
+            <div>
+                <h1 className="text-2xl font-semibold">My Trips</h1>
+                <p className="mt-1 text-sm text-muted-foreground">
+                    Your current groups and a history of who and where you've travelled with.
+                </p>
+            </div>
+
+            {error && (
+                <div className="flex items-center gap-2 rounded-md border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-destructive">
+                    <XCircle className="h-4 w-4 shrink-0" />
+                    {error}
+                </div>
+            )}
+
+            {/* Where To? */}
+            {suggestions.length > 0 && (
+                <section>
+                    <h2 className="mb-3 text-sm font-medium text-muted-foreground">Where to?</h2>
+                    <div className="-mx-4 flex gap-2 overflow-x-auto px-4 pb-1 sm:mx-0 sm:flex-wrap sm:px-0">
+                        {suggestions.map((loc) => (
+                            <Link
+                                key={loc}
+                                href={`/home?destination=${encodeURIComponent(loc)}`}
+                                className="flex shrink-0 items-center gap-1.5 rounded-full border bg-background px-3 py-1.5 text-sm transition-colors hover:bg-accent"
+                            >
+                                <MapPin className="h-3.5 w-3.5 text-muted-foreground" />
+                                {loc}
+                            </Link>
+                        ))}
+                    </div>
+                </section>
+            )}
+
+            {/* Current trips */}
+            <section>
+                <h2 className="mb-3 text-sm font-medium text-muted-foreground">Current trips</h2>
+
+                {currentGroups.length === 0 ? (
+                    <Card>
+                        <CardContent className="flex flex-col items-center gap-3 py-10 text-center">
+                            <History className="h-8 w-8 text-muted-foreground" />
+                            <p className="text-sm text-muted-foreground">No active trip right now.</p>
+                            <Button asChild size="sm">
+                                <Link href="/home?destination=">Request an escort</Link>
+                            </Button>
+                        </CardContent>
+                    </Card>
+                ) : (
+                    <div className="space-y-3">
+                        {currentGroups.map((group) => {
+                            const role = getRole(group, userId);
+                            return (
+                                <Card key={group.id} className="border-blue-600/30">
+                                    <CardHeader className="pb-3">
+                                        <div className="flex items-start justify-between gap-2">
+                                            <CardTitle className="text-base">{group.name || "Escort request"}</CardTitle>
+                                            <AliveBadge />
+                                        </div>
+                                        <CardDescription className="flex items-center gap-1.5 pt-1">
+                                            <MapPin className="h-3.5 w-3.5 shrink-0" />
+                                            <span className="truncate">
+                                                {group.start_location}
+                                                <Navigation className="mx-1 inline h-3 w-3 rotate-90" />
+                                                {group.end_location}
+                                            </span>
+                                        </CardDescription>
+                                    </CardHeader>
+
+                                    <CardContent className="space-y-4">
+                                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                            <span className="flex items-center gap-1">
+                                                <Clock className="h-3.5 w-3.5" />
+                                                {formatDatePPP(new Date(group.departure_time))}
+                                            </span>
+                                            <span className="flex items-center gap-1">
+                                                <Users className="h-3.5 w-3.5" />
+                                                {group.members.length}/{group.capacity}
+                                            </span>
+                                        </div>
+
+                                        {group.escorts.length > 0 && (
+                                            <div>
+                                                <p className="mb-1.5 text-xs text-muted-foreground">Escorts</p>
+                                                <div className="flex flex-wrap gap-3">
+                                                    {group.escorts.map((id) => (
+                                                        <PersonChip key={id} person={peopleById.get(id)} fallbackLabel="Escort" />
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {group.escorts.length === 0 && group.need_escort && (
+                                            <p className="text-sm text-muted-foreground">
+                                                Looking for an available escort — this usually only takes a minute.
+                                            </p>
+                                        )}
+
+                                        {group.members.length > 1 && (
+                                            <div>
+                                                <p className="mb-1.5 text-xs text-muted-foreground">Travelling with</p>
+                                                <div className="flex flex-wrap gap-3">
+                                                    {group.members
+                                                        .filter((id) => id !== userId)
+                                                        .map((id) => (
+                                                            <PersonChip key={id} person={peopleById.get(id)} fallbackLabel="Member" />
+                                                        ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="flex flex-col gap-2 sm:flex-row">
+                                            <a
+                                                href={`tel:${CAMPUS_SECURITY_PHONE}`}
+                                                className="flex w-full items-center justify-center gap-2 rounded-md bg-destructive px-3 py-2 text-sm font-semibold text-destructive-foreground transition-opacity hover:opacity-90 sm:w-auto"
+                                            >
+                                                <Phone className="h-4 w-4" />
+                                                Emergency
+                                            </a>
+                                            <Button
+                                                variant="outline"
+                                                className="w-full sm:w-auto"
+                                                onClick={() => handleLeaveOrEnd(group)}
+                                                disabled={actingId === group.id}
+                                            >
+                                                {actingId === group.id ? (
+                                                    <Loader2 className="h-4 w-4 animate-spin" />
+                                                ) : (
+                                                    <>
+                                                        <LogOut className="mr-1.5 h-4 w-4" />
+                                                        {leaveLabel(role)}
+                                                    </>
+                                                )}
+                                            </Button>
+                                        </div>
+                                    </CardContent>
+                                </Card>
+                            );
+                        })}
+                    </div>
+                )}
+            </section>
+
+            {/* History */}
+            <section>
+                <h2 className="mb-3 text-sm font-medium text-muted-foreground">Trip history</h2>
+
+                {pastGroups.length === 0 ? (
+                    <p className="rounded-md border border-dashed px-4 py-8 text-center text-sm text-muted-foreground">
+                        Your past trips will show up here.
+                    </p>
+                ) : (
+                    <Accordion type="multiple" className="space-y-2">
+                        {pastGroups.map((group) => {
+                            const role = getRole(group, userId);
+                            const otherMembers = group.members.filter((id) => id !== userId);
+
+                            return (
+                                <AccordionItem key={group.id} value={group.id} className="rounded-md border px-3">
+                                    <AccordionTrigger className="py-3 hover:no-underline [&>svg]:hidden">
+                                        <div className="flex w-full min-w-0 items-center gap-3">
+                                            <div className="min-w-0 flex-1 text-left">
+                                                <p className="truncate text-sm font-medium">
+                                                    {group.start_location} → {group.end_location}
+                                                </p>
+                                                <p className="text-xs text-muted-foreground">
+                                                    {formatDatePPP(new Date(group.departure_time))}
+                                                </p>
+                                            </div>
+                                            <Badge variant="outline" className="gap-1 text-muted-foreground">
+                                                <Ban className="h-3 w-3" /> Ended
+                                            </Badge>
+                                            <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground transition-transform duration-200 [[data-state=open]>&]:rotate-180" />
+                                        </div>
+                                    </AccordionTrigger>
+
+                                    <AccordionContent className="space-y-3 pb-4">
+                                        <div className="flex items-center gap-4 text-xs text-muted-foreground">
+                                            <span className="flex items-center gap-1">
+                                                <Clock className="h-3.5 w-3.5" />
+                                                Created {formatDatePPP(new Date(group.created_at))}
+                                            </span>
+                                            <span className="capitalize">Your role: {role?.replace("_", " ")}</span>
+                                        </div>
+
+                                        {group.escorts.length > 0 && (
+                                            <div>
+                                                <p className="mb-1.5 text-xs text-muted-foreground">Escorts</p>
+                                                <div className="flex flex-wrap gap-3">
+                                                    {group.escorts.map((id) => (
+                                                        <PersonChip key={id} person={peopleById.get(id)} fallbackLabel="Escort" />
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {otherMembers.length > 0 && (
+                                            <div>
+                                                <p className="mb-1.5 text-xs text-muted-foreground">Travelled with</p>
+                                                <div className="flex flex-wrap gap-3">
+                                                    {otherMembers.map((id) => (
+                                                        <PersonChip key={id} person={peopleById.get(id)} fallbackLabel="Member" />
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        {group.escorts.length === 0 && otherMembers.length === 0 && (
+                                            <p className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                                                <ShieldCheck className="h-3.5 w-3.5" />
+                                                You travelled alone on this trip.
+                                            </p>
+                                        )}
+                                    </AccordionContent>
+                                </AccordionItem>
+                            );
+                        })}
+                    </Accordion>
+                )}
+            </section>
+        </div>
+    );
+}

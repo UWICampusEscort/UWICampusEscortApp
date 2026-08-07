@@ -7,7 +7,6 @@ import type { User as SupabaseUser } from "@supabase/supabase-js";
 import {
   MapPinned,
   History,
-  Phone,
   ShieldCheck,
   Menu,
   ChevronDown,
@@ -127,7 +126,7 @@ export default function Navbar() {
                         <AvatarImage src={avatarUrl} alt={name} />
                         <AvatarFallback className="text-xs">{getInitials(name)}</AvatarFallback>
                       </Avatar>
-                      <span className="hidden max-w-[120px] truncate font-medium lg:inline">
+                      <span className="hidden max-w-30 truncate font-medium lg:inline">
                         {name}
                       </span>
                       <ChevronDown className="hidden h-4 w-4 text-muted-foreground lg:inline" />
@@ -151,12 +150,7 @@ export default function Navbar() {
                         Profile
                       </Link>
                     </DropdownMenuItem>
-                    <DropdownMenuItem asChild>
-                      <Link href="/contacts" className="cursor-pointer">
-                        <Phone className="mr-2 h-4 w-4" />
-                        Emergency Contacts
-                      </Link>
-                    </DropdownMenuItem>
+
                     <DropdownMenuItem asChild>
                       <Link href="/support" className="cursor-pointer">
                         <LifeBuoy className="mr-2 h-4 w-4" />

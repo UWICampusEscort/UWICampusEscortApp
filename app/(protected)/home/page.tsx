@@ -9,7 +9,8 @@ import { Field, FieldGroup, FieldLabel, FieldContent } from "@/components/ui/fie
 import { InputGroup, InputGroupInput, InputGroupAddon, InputGroupText } from "@/components/ui/input-group";
 import { createClient } from "@/lib/supabase/client";
 import { getInitials } from "@/lib/utils";
-import { useEffect, useMemo, useState } from "react";
+import { Suspense, useEffect, useMemo, useState } from "react";
+import { redirect, useSearchParams } from "next/navigation";
 import { toast } from "react-toastify";
 import { Profile } from "../profile/page";
 import RequestEscortSearch from "./requestescortsearch";
@@ -524,7 +525,7 @@ const RequestEscort = ({
   );
 };
 
-const CreateGroup = ({ isCreateGroupOpen, setIsCreateGroupOpen, handleTravelGroupCreation, requestingEscort, setRequestingEscort, specificEscorts, setSpecificEscorts, availableEscorts, userId }: { isCreateGroupOpen: boolean; setIsCreateGroupOpen: React.Dispatch<React.SetStateAction<boolean>>; handleTravelGroupCreation: (event: React.FormEvent<HTMLFormElement>) => Promise<void>; requestingEscort: boolean; setRequestingEscort: React.Dispatch<React.SetStateAction<boolean>>; specificEscorts: string[]; setSpecificEscorts: React.Dispatch<React.SetStateAction<string[]>>; availableEscorts: Profile[]; userId: string; }) => (
+const CreateGroup = ({ isCreateGroupOpen, setIsCreateGroupOpen, handleTravelGroupCreation, requestingEscort, setRequestingEscort, specificEscorts, setSpecificEscorts, availableEscorts, userId, destination }: { isCreateGroupOpen: boolean; setIsCreateGroupOpen: React.Dispatch<React.SetStateAction<boolean>>; handleTravelGroupCreation: (event: React.FormEvent<HTMLFormElement>) => Promise<void>; requestingEscort: boolean; setRequestingEscort: React.Dispatch<React.SetStateAction<boolean>>; specificEscorts: string[]; setSpecificEscorts: React.Dispatch<React.SetStateAction<string[]>>; availableEscorts: Profile[]; userId: string; destination?: string; }) => (
   <Dialog open={isCreateGroupOpen} onOpenChange={setIsCreateGroupOpen}>
     <DialogTrigger asChild>
       <Button variant="secondary" size="sm">Create</Button>
@@ -536,7 +537,10 @@ const CreateGroup = ({ isCreateGroupOpen, setIsCreateGroupOpen, handleTravelGrou
           Create a new group to travel together with others heading your way. You may also request escorts to join your group for added safety.
         </DialogDescription>
       </DialogHeader>
-      <form className="flex flex-col w-full gap-4 py-4" id="createTravelGroup" onSubmit={handleTravelGroupCreation}>
+      {/* key={destination} forces the uncontrolled inputs below to remount
+          (and pick up the new defaultValue) if the destination changes
+          while the dialog is already open. */}
+      <form className="flex flex-col w-full gap-4 py-4" id="createTravelGroup" onSubmit={handleTravelGroupCreation} key={destination ?? "blank"}>
         <FieldGroup>
           <div className="flex w-full gap-4">
             <Field>
@@ -570,7 +574,7 @@ const CreateGroup = ({ isCreateGroupOpen, setIsCreateGroupOpen, handleTravelGrou
 
             <Field>
               <InputGroup className="h-auto">
-                <InputGroupInput name="end_location" placeholder="eg. Seacole Entrance" className="text-sm sm:text-base" required />
+                <InputGroupInput name="end_location" placeholder="eg. Seacole Entrance" defaultValue={destination} className="text-sm sm:text-base" required />
                 <InputGroupAddon align="block-start">
                   <InputGroupText className="text-xs sm:text-sm">End Location</InputGroupText>
                 </InputGroupAddon>
@@ -585,6 +589,18 @@ const CreateGroup = ({ isCreateGroupOpen, setIsCreateGroupOpen, handleTravelGrou
                 <InputGroupText className="text-xs sm:text-sm">Departure Time</InputGroupText>
               </InputGroupAddon>
             </InputGroup>
+          </Field>
+
+          <Field orientation="horizontal">
+            <Checkbox
+              id="is_public"
+              name="is_public"
+              defaultChecked={false}
+              value="on"
+            />
+            <FieldContent>
+              <FieldLabel htmlFor="is_public">Public Group?</FieldLabel>
+            </FieldContent>
           </Field>
 
           <Field orientation="horizontal">
@@ -670,7 +686,10 @@ const EscortGroup = ({ groups, userId, isEscortGroupOpen, setIsEscortGroupOpen }
 // Page
 // ---------------------------------------------------------------------------
 
-export default function HomePage() {
+function HomePageContent() {
+  const searchParams = useSearchParams();
+  const destination = searchParams.get("destination") ?? undefined;
+
   const [userId, setUserId] = useState<string>("");
   const [groups, setGroups] = useState<TravelGroupData[]>([]);
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
@@ -678,6 +697,12 @@ export default function HomePage() {
   const [requestingEscort, setRequestingEscort] = useState(false);
   const [specificEscorts, setSpecificEscorts] = useState<string[]>([]);
   const [availableEscorts, setAvailableEscorts] = useState<Profile[]>([]);
+
+  // Arriving with a ?destination= (e.g. from the "Where To?" shortcuts on
+  // My Trips) opens the create dialog immediately with it prefilled.
+  useEffect(() => {
+    if (destination !== undefined) setIsCreateGroupOpen(true);
+  }, [destination]);
 
   // Derived rather than duplicated in state — avoids an extra render pass
   // every time `groups` changes.
@@ -706,6 +731,8 @@ export default function HomePage() {
     db.from("groups")
       .select("*")
       .eq("alive", true)
+      .eq("is_public", true)
+      .neq("created_by", userId)
       .then(async ({ data }) => {
         if (!data) return;
         const groupsWithUserData = await Promise.all(
@@ -775,12 +802,14 @@ export default function HomePage() {
       requestEscorts: formData.get("request_escorts") === "on",
       userId,
       specificEscorts,
+      isPublic: formData.get("is_public") === "on"
     });
 
     if (success) {
       setIsCreateGroupOpen(false);
       setRequestingEscort(false);
       setSpecificEscorts([]);
+      redirect("/trips");
     } else {
       console.error(error);
       toast.error(`Failed to create travel group: ${error}`);
@@ -794,7 +823,7 @@ export default function HomePage() {
   return (
     <div className="mx-auto w-full max-w-5xl px-4 sm:px-6 lg:px-8 pt-8">
       <div className="w-full flex justify-between items-center">
-        <span className="md:text-lg font-semibold">Groups forming now</span>
+        <span className="md:text-lg font-semibold">Public groups forming now</span>
         <div className="flex gap-2 items-center">
           <span className="text-sm hidden md:block">Join one heading your way or</span>
           <div className="flex flex-col sm:flex-row gap-2">
@@ -808,6 +837,7 @@ export default function HomePage() {
               setSpecificEscorts={setSpecificEscorts}
               availableEscorts={availableEscorts}
               userId={userId}
+              destination={destination}
             />
             {availableEscorts.some((user) => user.id === userId) && (
               <EscortGroup
@@ -833,5 +863,13 @@ export default function HomePage() {
         </div>
       )}
     </div>
+  );
+}
+
+export default function HomePage() {
+  return (
+    <Suspense>
+      <HomePageContent />
+    </Suspense>
   );
 }

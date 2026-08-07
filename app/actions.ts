@@ -10,7 +10,8 @@ export const createTravelGroup = async ({
     departureTime,
     requestEscorts,
     userId,
-    specificEscorts
+    specificEscorts,
+    isPublic
 }: {
     groupName: string;
     capacity: number;
@@ -20,18 +21,20 @@ export const createTravelGroup = async ({
     requestEscorts: boolean;
     userId: string;
     specificEscorts: string[];
+    isPublic: boolean;
 }) => {
 
     const db = await createClient();
     const { error } = await db.from("groups").insert([{
         name: groupName,
-        capacity: capacity,
+        capacity,
         start_location: startLocation,
         end_location: endLocation,
         departure_time: departureTime,
         members: [userId],
         requested_escorts: requestEscorts ? specificEscorts : [],
         need_escort: requestEscorts,
+        is_public: isPublic
     }]);
 
     return { success: !error, error: error?.message || null };

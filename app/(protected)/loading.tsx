@@ -10,7 +10,7 @@ export default function Loading() {
             <div className="relative flex h-14 w-14 items-center justify-center">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary/20" />
                 <div className="relative flex h-12 w-12 items-center justify-center rounded-full bg-primary text-primary-foreground">
-                    <Image className="h-12 w-12 rounded-md" src={logo} alt="Logo" />
+                    <Image className="h-12 w-12 rounded-md" src={logo} alt="Logo" loading="eager" />
                 </div>
             </div>
 
