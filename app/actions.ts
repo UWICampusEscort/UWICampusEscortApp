@@ -1,5 +1,6 @@
 "use server"
 
+import { sendPushNotificationToUsers } from "@/lib/push/server";
 import { createClient } from "@/lib/supabase/server";
 
 export const createTravelGroup = async ({
@@ -36,6 +37,20 @@ export const createTravelGroup = async ({
         need_escort: requestEscorts,
         is_public: isPublic
     }]);
+
+    if (!error && requestEscorts && specificEscorts.length > 0) {
+        // Send notification to requested escorts
+        sendPushNotificationToUsers(specificEscorts, {
+            title: "Escort Request",
+            body: `You have been requested to escort a travel group from ${startLocation} to ${endLocation}.`,
+            data: {
+                groupName,
+                startLocation,
+                endLocation,
+                departureTime
+            }
+        });
+    }
 
     return { success: !error, error: error?.message || null };
 };
