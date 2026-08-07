@@ -39,6 +39,12 @@ export function SignUpForm({
       return;
     }
 
+    if (!email.endsWith(".uwi.edu")) {
+      setError("Please use a valid UWI email address");
+      setIsLoading(false);
+      return;
+    }
+
     try {
       const { error } = await supabase.auth.signUp({
         email,
