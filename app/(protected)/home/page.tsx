@@ -15,7 +15,20 @@ import { toast } from "react-toastify";
 import { Profile } from "../profile/page";
 import { createTravelGroup, requestToJoinTravelGroup } from "@/app/actions";
 import Link from "next/link";
-import { ShieldAlert, Search, ArrowLeft, ArrowRight, X } from "lucide-react";
+import {
+  ShieldAlert,
+  Search,
+  ArrowLeft,
+  ArrowRight,
+  X,
+  Clock,
+  Users,
+  ShieldCheck,
+  ShieldOff,
+  Navigation,
+  UserMinus,
+  Ban,
+} from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 // ---------------------------------------------------------------------------
@@ -99,12 +112,24 @@ const UserAvatar = ({
   );
 };
 
-const GroupSummaryHeader = ({ data, time }: { data: TravelGroupData; time: string }) => (
+const GroupSummaryHeader = ({
+  data,
+  time,
+  onViewProfile,
+}: {
+  data: TravelGroupData;
+  time: string;
+  onViewProfile: (userId: string) => void;
+}) => (
   <CardHeader>
     <CardTitle className="text-base flex flex-col gap-2">
       <span>{data.name}</span>
       <div className="flex flex-col sm:flex-row justify-between overflow-x-auto scrollbar-none">
-        <span className="text-sm font-semibold">{`${data.start_location} -> ${data.end_location}`}</span>
+        <span className="text-sm font-semibold flex items-center gap-1 min-w-0">
+          <span className="truncate">{data.start_location}</span>
+          <Navigation className="h-3 w-3 rotate-90 shrink-0 text-muted-foreground" />
+          <span className="truncate">{data.end_location}</span>
+        </span>
         <span className="text-sm text-muted-foreground font-normal min-w-fit">{time}</span>
       </div>
     </CardTitle>
@@ -112,9 +137,14 @@ const GroupSummaryHeader = ({ data, time }: { data: TravelGroupData; time: strin
     <CardDescription>
       <AvatarGroup className="overflow-x-auto scrollbar-none">
         {data.members.map((memberId) => (
-          <Link href={`/profile/${memberId}`} key={memberId}>
+          <button
+            type="button"
+            key={memberId}
+            onClick={() => onViewProfile(memberId)}
+            className="rounded-full transition-opacity hover:opacity-80"
+          >
             <UserAvatar userId={memberId} data={data} />
-          </Link>
+          </button>
         ))}
       </AvatarGroup>
       <span className="text-sm">{data.members.length} of {data.capacity} spots filled</span>
@@ -122,108 +152,112 @@ const GroupSummaryHeader = ({ data, time }: { data: TravelGroupData; time: strin
   </CardHeader>
 );
 
-const EscortsList = ({
-  data,
-  canReject,
-  onReject,
-}: {
-  data: TravelGroupData;
-  canReject: boolean;
-  onReject?: (escortId: string) => void;
-}) => {
-  const escortIds = Array.from(new Set([...data.escorts, ...data.requested_escorts]));
-  if (escortIds.length === 0) return null;
-
+/** Pulsing pill for the departure countdown — mirrors the "Active" badge on My Trips. */
+const DepartureBadge = ({ time }: { time: string }) => {
+  const departed = time === "Departed";
   return (
-    <>
-      <span className="text-sm mt-2">Escorts ({data.escorts.length})</span>
-      <div className="h-48 overflow-y-auto overflow-x-hidden border inset border-border rounded-md p-1 scrollbar-thin">
-        {escortIds.map((escortId) => {
-          const isConfirmed = data.escorts.includes(escortId);
-          const name = data.idToUserData?.get(escortId)?.name || "Unknown";
-          return (
-            <div key={escortId} className="flex items-center gap-2 p-2">
-              <Link href={`/profile/${escortId}`} className="flex gap-2 items-center w-full h-full">
-                <UserAvatar userId={escortId} data={data} />
-                <span className="text-sm min-w-0 flex-1 truncate">{name}</span>
-              </Link>
-
-              {isConfirmed && onReject && (
-                <Button
-                  variant="destructive"
-                  size="sm"
-                  className="ml-auto shrink-0"
-                  disabled={!canReject}
-                  onClick={() => onReject(escortId)}
-                >
-                  {canReject ? "Reject" : "Reject (Owner Only)"}
-                </Button>
-              )}
-              {!isConfirmed && <Badge variant="default" className="shrink-0">Requested</Badge>}
-            </div>
-          );
-        })}
-      </div>
-    </>
+    <Badge
+      className={cn(
+        "shrink-0 gap-1.5 border-none text-white",
+        departed ? "bg-muted-foreground/60" : "bg-blue-600 hover:bg-blue-600"
+      )}
+    >
+      {!departed && (
+        <span className="relative flex h-1.5 w-1.5">
+          <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-white/70" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-white" />
+        </span>
+      )}
+      {time}
+    </Badge>
   );
 };
 
-const MembersList = ({
+/** Thin capacity bar — how full the group is at a glance. */
+const CapacityBar = ({ filled, capacity }: { filled: number; capacity: number }) => (
+  <div>
+    <div className="mb-1.5 flex items-center justify-between text-xs text-muted-foreground">
+      <span className="flex items-center gap-1"><Users className="h-3.5 w-3.5" /> Spots filled</span>
+      <span className="font-medium text-foreground">{filled}/{capacity}</span>
+    </div>
+    <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+      <div
+        className="h-full rounded-full bg-blue-600 transition-all duration-500"
+        style={{ width: `${capacity > 0 ? Math.min(100, (filled / capacity) * 100) : 0}%` }}
+      />
+    </div>
+  </div>
+);
+
+/** Read-only row for the "overview" panel — click to preview the profile. */
+const PersonRow = ({
+  id,
   data,
-  currentUser,
-  isOwner,
-  onKick,
-  onBan,
+  onViewProfile,
+  isOrganizer,
+  trailing,
 }: {
+  id: string;
   data: TravelGroupData;
-  currentUser: string;
-  isOwner: boolean;
-  onKick: (memberId: string) => void;
-  onBan: (memberId: string) => void;
+  onViewProfile: (userId: string) => void;
+  isOrganizer?: boolean;
+  trailing?: React.ReactNode;
 }) => {
-  const [confirmingBan, setConfirmingBan] = useState("");
-
+  const user = data.idToUserData?.get(id);
   return (
-    <>
-      <span className="text-sm mt-2">Members ({data.members.length}/{data.capacity})</span>
-      <div className="h-48 overflow-y-auto overflow-x-hidden border inset border-border rounded-md p-1 scrollbar-thin">
-        {data.members.map((memberId) => {
-          const name = data.idToUserData?.get(memberId)?.name || "~Unknown";
-          const canManage = isOwner && currentUser !== memberId;
-          return (
-            <div key={memberId} className="flex items-center gap-2 p-2">
-              <Link href={`/profile/${memberId}`} className="flex gap-2 items-center w-full h-full">
-                <UserAvatar userId={memberId} data={data} />
-                <span className="text-sm line-clamp-1">{name}</span>
-              </Link>
-
-              {canManage && (
-                <div className="flex gap-2 ml-auto shrink-0">
-                  <Button variant="destructive" size="sm" onClick={() => onKick(memberId)}>Kick</Button>
-                  <Button
-                    variant="destructive"
-                    size="sm"
-                    onClick={() => {
-                      if (confirmingBan === memberId) {
-                        onBan(memberId);
-                        setConfirmingBan("");
-                      } else {
-                        setConfirmingBan(memberId);
-                        setTimeout(() => setConfirmingBan(""), 3000);
-                      }
-                    }}
-                  >
-                    {confirmingBan === memberId ? "Are you sure?" : "Ban"}
-                  </Button>
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </>
+    <button
+      type="button"
+      onClick={() => onViewProfile(id)}
+      className="flex w-full items-center gap-3 px-3 py-2.5 text-left transition-colors hover:bg-accent"
+    >
+      <Avatar className="h-8 w-8 shrink-0 ring-2 ring-background">
+        <AvatarImage src={user?.avatar_url} alt={user?.name || "Unknown"} />
+        <AvatarFallback className="text-xs">{getInitials(user?.name || "Unknown")}</AvatarFallback>
+      </Avatar>
+      <span className="min-w-0 flex-1 truncate text-sm font-medium">{user?.name || "Unknown"}</span>
+      {isOrganizer && (
+        <Badge variant="secondary" className="shrink-0 text-[10px]">Organizer</Badge>
+      )}
+      {trailing}
+    </button>
   );
 };
+
+/** Same row, but with icon-only management actions on the right (owner-only panel). */
+const ManageRow = ({
+  id,
+  data,
+  onViewProfile,
+  children,
+}: {
+  id: string;
+  data: TravelGroupData;
+  onViewProfile: (userId: string) => void;
+  children?: React.ReactNode;
+}) => {
+  const user = data.idToUserData?.get(id);
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 transition-colors hover:bg-accent">
+      <button
+        type="button"
+        onClick={() => onViewProfile(id)}
+        className="flex min-w-0 flex-1 items-center gap-3 text-left"
+      >
+        <Avatar className="h-8 w-8 shrink-0 ring-2 ring-background">
+          <AvatarImage src={user?.avatar_url} alt={user?.name || "Unknown"} />
+          <AvatarFallback className="text-xs">{getInitials(user?.name || "Unknown")}</AvatarFallback>
+        </Avatar>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">{user?.name || "Unknown"}</span>
+      </button>
+      <div className="flex shrink-0 gap-1.5">{children}</div>
+    </div>
+  );
+};
+
+/** Small uppercase eyebrow label used above each list in the details modal. */
+const SectionLabel = ({ children }: { children: React.ReactNode }) => (
+  <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">{children}</p>
+);
 
 // ---------------------------------------------------------------------------
 // Profile preview modal — embeds /profile/[userId] inside a dialog so the
@@ -269,12 +303,20 @@ const GroupCard = ({
 }) => {
   const time = useDepartureCountdown(data.departure_time);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
+  const [step, setStep] = useState<1 | 2>(1);
   const [confirmingDestroy, setConfirmingDestroy] = useState(false);
+  const [confirmingBan, setConfirmingBan] = useState("");
 
   const isOwner = currentUser === data.created_by;
+  const escortIds = Array.from(new Set([...data.escorts, ...data.requested_escorts]));
 
+  // Reset the wizard whenever the dialog closes.
   useEffect(() => {
-    if (!isDetailsOpen) setConfirmingDestroy(false);
+    if (!isDetailsOpen) {
+      setConfirmingDestroy(false);
+      setConfirmingBan("");
+      setStep(1);
+    }
   }, [isDetailsOpen]);
 
   const joinGroup = async () => {
@@ -369,7 +411,7 @@ const GroupCard = ({
 
   return (
     <Card className="mb-6 w-full h-fit">
-      <GroupSummaryHeader data={data} time={time} />
+      <GroupSummaryHeader data={data} time={time} onViewProfile={onViewProfile} />
 
       <CardContent className="flex justify-between items-center gap-4">
         {renderPrimaryAction()}
@@ -378,34 +420,203 @@ const GroupCard = ({
           <DialogTrigger asChild>
             <Button variant="outline" size="sm" className="w-full">Details</Button>
           </DialogTrigger>
-          <DialogContent className="w-[92vw] sm:w-full sm:max-w-2xl max-h-[85vh] overflow-x-hidden overflow-y-auto scrollbar-thin">
-            <DialogHeader>
-              <DialogTitle className="text-sm sm:text-base">{data.name}</DialogTitle>
-              <DialogDescription className="text-xs sm:text-sm" asChild>
-                <div className="flex flex-col gap-2">
-                  <div className="flex flex-col sm:flex-row sm:items-center gap-1 sm:gap-2">
-                    <span className="text-sm font-semibold min-w-0 flex-1 truncate">
-                      {`${data.start_location} -> ${data.end_location}`}
-                    </span>
-                    <span className="text-sm text-muted-foreground font-normal shrink-0">{time}</span>
-                  </div>
-
-                  <EscortsList data={data} canReject={isOwner} onReject={rejectEscort} />
-
-                  <MembersList
-                    data={data}
-                    currentUser={currentUser}
-                    isOwner={isOwner}
-                    onKick={kick}
-                    onBan={ban}
-                  />
+          <DialogContent className="flex max-h-[85vh] w-[92vw] flex-col gap-0 overflow-hidden p-0 sm:w-full sm:max-w-lg">
+            <DialogHeader className="gap-0 border-b border-border px-6 pb-4 pt-6 text-left">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <DialogTitle className="truncate text-lg font-semibold">{data.name || "Trip details"}</DialogTitle>
+                  <DialogDescription className="mt-1 flex items-center gap-1.5 text-sm text-foreground/80" asChild>
+                    <div>
+                      <span className="truncate">{data.start_location}</span>
+                      <Navigation className="h-3.5 w-3.5 shrink-0 rotate-90 text-muted-foreground" />
+                      <span className="truncate">{data.end_location}</span>
+                    </div>
+                  </DialogDescription>
                 </div>
-              </DialogDescription>
+                <DepartureBadge time={time} />
+              </div>
             </DialogHeader>
 
-            <DialogFooter>
-              <div className="flex gap-2 w-full justify-between">
-                {isOwner && (
+            {/* Animated Overview / Manage switcher — only owners get a Manage tab. */}
+            {isOwner && (
+              <div className="relative mx-6 mt-4 flex rounded-full bg-muted p-1 text-sm font-medium">
+                <span
+                  className="absolute inset-y-1 left-1 w-[calc(50%-4px)] rounded-full bg-background shadow-sm transition-transform duration-300 ease-in-out"
+                  style={{ transform: step === 2 ? "translateX(100%)" : "translateX(0%)" }}
+                />
+                <button
+                  type="button"
+                  onClick={() => setStep(1)}
+                  className={cn(
+                    "relative z-10 flex-1 rounded-full py-1.5 transition-colors",
+                    step === 1 ? "text-foreground" : "text-muted-foreground"
+                  )}
+                >
+                  Overview
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setStep(2)}
+                  className={cn(
+                    "relative z-10 flex-1 rounded-full py-1.5 transition-colors",
+                    step === 2 ? "text-foreground" : "text-muted-foreground"
+                  )}
+                >
+                  Manage
+                </button>
+              </div>
+            )}
+
+            {/* Sliding two-panel wizard, matching the pattern used on My Trips. */}
+            <div className="flex-1 overflow-hidden">
+              <div
+                className="flex w-[200%] transition-transform duration-300 ease-in-out"
+                style={{ transform: step === 1 ? "translateX(0%)" : "translateX(-50%)" }}
+              >
+                {/* Step 1: overview */}
+                <div className="max-h-[55vh] w-1/2 overflow-y-auto px-6 pb-6 pt-4 scrollbar-thin">
+                  <div className="flex flex-col gap-5">
+                    <CapacityBar filled={data.members.length} capacity={data.capacity} />
+
+                    <div>
+                      <SectionLabel>Members</SectionLabel>
+                      <div className="overflow-hidden rounded-xl border border-border divide-y divide-border">
+                        {data.members.map((id) => (
+                          <PersonRow
+                            key={id}
+                            id={id}
+                            data={data}
+                            onViewProfile={onViewProfile}
+                            isOrganizer={id === data.created_by}
+                          />
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <SectionLabel>Escorts</SectionLabel>
+                      {escortIds.length > 0 ? (
+                        <div className="overflow-hidden rounded-xl border border-border divide-y divide-border">
+                          {escortIds.map((id) => (
+                            <PersonRow
+                              key={id}
+                              id={id}
+                              data={data}
+                              onViewProfile={onViewProfile}
+                              trailing={
+                                data.escorts.includes(id) ? (
+                                  <Badge
+                                    variant="outline"
+                                    className="shrink-0 gap-1 border-blue-600/30 bg-blue-600/10 text-[10px] text-blue-600"
+                                  >
+                                    <ShieldCheck className="h-3 w-3" /> Confirmed
+                                  </Badge>
+                                ) : (
+                                  <Badge
+                                    variant="outline"
+                                    className="shrink-0 gap-1 border-amber-500/30 bg-amber-500/10 text-[10px] text-amber-600"
+                                  >
+                                    <Clock className="h-3 w-3" /> Pending
+                                  </Badge>
+                                )
+                              }
+                            />
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="rounded-xl border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
+                          No escorts requested yet.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Step 2: manage (owner only) */}
+                <div className="max-h-[55vh] w-1/2 overflow-y-auto px-6 pb-6 pt-4 scrollbar-thin">
+                  <div className="flex flex-col gap-5">
+                    <div>
+                      <SectionLabel>Members</SectionLabel>
+                      {data.members.filter((id) => id !== currentUser).length > 0 ? (
+                        <div className="overflow-hidden rounded-xl border border-border divide-y divide-border">
+                          {data.members
+                            .filter((id) => id !== currentUser)
+                            .map((id) => (
+                              <ManageRow key={id} id={id} data={data} onViewProfile={onViewProfile}>
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className="h-8 w-8 shrink-0"
+                                  onClick={() => kick(id)}
+                                  title="Kick from group"
+                                >
+                                  <UserMinus className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="outline"
+                                  size="icon"
+                                  className={cn(
+                                    "h-8 w-8 shrink-0 text-destructive hover:text-destructive",
+                                    confirmingBan === id && "border-destructive bg-destructive/10"
+                                  )}
+                                  onClick={() => {
+                                    if (confirmingBan === id) {
+                                      ban(id);
+                                      setConfirmingBan("");
+                                    } else {
+                                      setConfirmingBan(id);
+                                      setTimeout(() => setConfirmingBan(""), 3000);
+                                    }
+                                  }}
+                                  title={confirmingBan === id ? "Click again to confirm ban" : "Ban from group"}
+                                >
+                                  <Ban className="h-4 w-4" />
+                                </Button>
+                              </ManageRow>
+                            ))}
+                        </div>
+                      ) : (
+                        <p className="rounded-xl border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
+                          No other members to manage yet.
+                        </p>
+                      )}
+                    </div>
+
+                    <div>
+                      <SectionLabel>Escorts</SectionLabel>
+                      {data.escorts.length > 0 ? (
+                        <div className="overflow-hidden rounded-xl border border-border divide-y divide-border">
+                          {data.escorts.map((id) => (
+                            <ManageRow key={id} id={id} data={data} onViewProfile={onViewProfile}>
+                              <Button
+                                variant="outline"
+                                size="icon"
+                                className="h-8 w-8 shrink-0 text-destructive hover:text-destructive"
+                                onClick={() => rejectEscort(id)}
+                                title="Remove escort"
+                              >
+                                <ShieldOff className="h-4 w-4" />
+                              </Button>
+                            </ManageRow>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="rounded-xl border border-dashed border-border px-3 py-4 text-center text-sm text-muted-foreground">
+                          No confirmed escorts yet.
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <DialogFooter className="border-t border-border px-6 py-4">
+              <div className="flex w-full items-center justify-between gap-2">
+                <DialogClose asChild>
+                  <Button variant="outline" size="sm">Close</Button>
+                </DialogClose>
+                {step === 2 && isOwner && (
                   <Button
                     variant="destructive"
                     size="sm"
@@ -417,13 +628,9 @@ const GroupCard = ({
                       }
                     }}
                   >
-                    {confirmingDestroy ? "Are you sure?" : "Destroy"}
+                    {confirmingDestroy ? "Are you sure?" : "Destroy group"}
                   </Button>
                 )}
-
-                <DialogClose asChild>
-                  <Button variant="outline">Close</Button>
-                </DialogClose>
               </div>
             </DialogFooter>
           </DialogContent>
