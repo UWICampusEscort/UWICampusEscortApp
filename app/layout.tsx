@@ -5,6 +5,7 @@ import "./globals.css";
 import { Footer } from "@/components/footer";
 import Navbar from "@/components/navbar";
 import { PushNotificationsProvider } from "@/components/push-notifications-provider";
+import { PwaInstallPrompt } from "@/components/pwa-install-prompt";
 import { ToastContainer } from "react-toastify";
 import { APP_NAME } from "@/lib/constants";
 
@@ -164,6 +165,7 @@ export default function RootLayout({
             <Navbar />
             {children}
             <Footer />
+            <PwaInstallPrompt />
             <ToastContainer />
           </PushNotificationsProvider>
         </ThemeProvider>

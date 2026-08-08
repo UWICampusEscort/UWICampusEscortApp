@@ -1,6 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { hasEnvVars } from "../utils";
+import { getIsEscortFromCache } from "../cache";
 
 export async function updateSession(request: NextRequest) {
   let supabaseResponse = NextResponse.next({
@@ -58,6 +59,20 @@ export async function updateSession(request: NextRequest) {
     // no user, potentially respond by redirecting the user to the login page
     const url = request.nextUrl.clone();
     url.pathname = "/auth/login";
+    return NextResponse.redirect(url);
+  }
+
+  const isEscort = await getIsEscortFromCache(user?.sub ?? "");
+
+  if (request.nextUrl.pathname == "/home" && isEscort !== false) {
+    const url = request.nextUrl.clone();
+    url.pathname = isEscort === "undetermined" ? "/" : "/escort";
+    return NextResponse.redirect(url);
+  }
+
+  if (request.nextUrl.pathname == "/escort" && isEscort !== true) {
+    const url = request.nextUrl.clone();
+    url.pathname = isEscort === "undetermined" ? "/" : "/home";
     return NextResponse.redirect(url);
   }
 

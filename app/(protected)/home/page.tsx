@@ -16,6 +16,8 @@ import { Profile } from "../profile/page";
 import RequestEscortSearch from "./requestescortsearch";
 import { createTravelGroup } from "@/app/actions";
 import Link from "next/link";
+import { ShieldAlert } from "lucide-react";
+import { Skeleton } from "@/components/ui/skeleton";
 
 // ---------------------------------------------------------------------------
 // Types
@@ -45,6 +47,8 @@ type TravelGroupData = {
   need_escort: boolean;
   idToUserData: Map<string, TravelGroupUserData>;
 };
+
+type EscorteeEligibility = "checking" | "not_escortee" | "unverified" | "eligible";
 
 // ---------------------------------------------------------------------------
 // Time helpers
@@ -642,45 +646,6 @@ const CreateGroup = ({ isCreateGroupOpen, setIsCreateGroupOpen, handleTravelGrou
   </Dialog>
 );
 
-const EscortGroup = ({ groups, userId, isEscortGroupOpen, setIsEscortGroupOpen }: { groups: TravelGroupData[]; userId: string; isEscortGroupOpen: boolean; setIsEscortGroupOpen: React.Dispatch<React.SetStateAction<boolean>>; }) => {
-  const escortableGroups = groups
-    .filter(
-      (group) =>
-        group.alive &&
-        group.need_escort &&
-        !hasDeparted(group.departure_time) &&
-        (group.requested_escorts.length === 0 || group.requested_escorts.includes(userId))
-    )
-    .sort((a, b) => new Date(a.departure_time).getTime() - new Date(b.departure_time).getTime());
-
-  return (
-    <Dialog open={isEscortGroupOpen} onOpenChange={setIsEscortGroupOpen}>
-      <DialogTrigger asChild>
-        <Button variant="outline" size="sm">Escort</Button>
-      </DialogTrigger>
-      <DialogContent className="min-w-[75vw] max-h-[85vh] overflow-x-hidden overflow-y-auto scrollbar-thin">
-        <DialogHeader>
-          <DialogTitle className="text-sm sm:text-base">Escort Travel Group</DialogTitle>
-          <DialogDescription className="text-xs sm:text-sm">
-            Escort a group traveling together with others heading your way.
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="flex flex-col gap-2 w-full h-[60vh] overflow-y-auto scrollbar-thin px-4 py-4">
-          {escortableGroups.map((group) => (
-            <GroupCard key={group.id} data={group} currentUser={userId} variant="escort" />
-          ))}
-        </div>
-
-        <DialogFooter>
-          <DialogClose asChild>
-            <Button variant="outline">Close</Button>
-          </DialogClose>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
-};
 
 // ---------------------------------------------------------------------------
 // Page
@@ -693,10 +658,11 @@ function HomePageContent() {
   const [userId, setUserId] = useState<string>("");
   const [groups, setGroups] = useState<TravelGroupData[]>([]);
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
-  const [isEscortGroupOpen, setIsEscortGroupOpen] = useState(false);
+  const [eligibility, setEligibility] = useState<EscorteeEligibility>("checking");
   const [requestingEscort, setRequestingEscort] = useState(false);
   const [specificEscorts, setSpecificEscorts] = useState<string[]>([]);
   const [availableEscorts, setAvailableEscorts] = useState<Profile[]>([]);
+  const [loading, setLoading] = useState(true);
 
   // Arriving with a ?destination= (e.g. from the "Where To?" shortcuts on
   // My Trips) opens the create dialog immediately with it prefilled.
@@ -724,9 +690,8 @@ function HomePageContent() {
   const refresh = async () => {
     const db = createClient();
 
-    db.auth.getUser().then(({ data: { user } }) => {
-      if (user) setUserId(user.id);
-    });
+    const { data: { user } } = await db.auth.getUser();
+    if (user) setUserId(user.id);
 
     db.from("groups")
       .select("*")
@@ -746,8 +711,30 @@ function HomePageContent() {
       .eq("escort", true)
       .gt("graduation_date", new Date().toISOString())
       .then(({ data }) => {
-        if (data) setAvailableEscorts(data);
+        if (data) {
+          setAvailableEscorts(data);
+        }
       });
+
+    const { data: profile } = await db
+      .from("profiles")
+      .select("escort, identity_status")
+      .eq("id", userId)
+      .maybeSingle();
+
+    if (profile?.escort) {
+      setEligibility("not_escortee");
+      setLoading(false);
+      return;
+    }
+    /*
+    if (profile.identity_status !== "verified") {
+        setEligibility("unverified");
+        setLoading(false);
+        return;
+    }
+    */
+    setEligibility("eligible");
   };
 
   useEffect(() => {
@@ -820,6 +807,41 @@ function HomePageContent() {
     .filter((group) => !hasDeparted(group.departure_time))
     .sort((a, b) => new Date(a.departure_time).getTime() - new Date(b.departure_time).getTime());
 
+  if (loading) {
+    return (
+      <div className="mx-auto w-full max-w-4xl space-y-4 px-4 py-10 sm:px-6">
+        <Skeleton className="h-6 w-40" />
+        <Skeleton className="h-40 w-full rounded-lg" />
+        <Skeleton className="h-40 w-full rounded-lg" />
+      </div>
+    );
+  }
+
+  if (!userId) {
+    return (
+      <div className="mx-auto w-full max-w-4xl px-4 py-24 text-center">
+        <p className="text-muted-foreground">Sign in to view escort requests.</p>
+        <Button asChild className="mt-4">
+          <Link href="/auth/login">Sign in</Link>
+        </Button>
+      </div>
+    );
+  }
+
+  if (eligibility === "not_escortee") {
+    return (
+      <div className="mx-auto w-full max-w-4xl px-4 py-24 text-center">
+        <ShieldAlert className="mx-auto h-8 w-8 text-muted-foreground" />
+        <p className="mt-3 text-muted-foreground">
+          You're not registered as an escortee yet.
+        </p>
+        <Button asChild className="mt-4">
+          <Link href="/profile">Become an escortee</Link>
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="mx-auto w-full max-w-5xl px-4 sm:px-6 lg:px-8 pt-8">
       <div className="w-full flex justify-between items-center">
@@ -839,14 +861,6 @@ function HomePageContent() {
               userId={userId}
               destination={destination}
             />
-            {availableEscorts.some((user) => user.id === userId) && (
-              <EscortGroup
-                groups={groups}
-                userId={userId}
-                isEscortGroupOpen={isEscortGroupOpen}
-                setIsEscortGroupOpen={setIsEscortGroupOpen}
-              />
-            )}
           </div>
         </div>
       </div>

@@ -94,8 +94,6 @@ export default function ProfilePage() {
 
   const [savingGraduationDate, setSavingGraduationDate] = useState(false);
 
-  const [savingBeAnEscort, setSavingBeAnEscort] = useState(false);
-
   const [avatarUploading, setAvatarUploading] = useState(false);
 
   const [resendingEmail, setResendingEmail] = useState(false);
@@ -283,23 +281,6 @@ export default function ProfilePage() {
     }
 
     setPhoneLoading(false);
-  };
-
-  /* --- Be an escort ----------------------------------------*/
-  const handleSaveBeAnEscort = async (value: boolean) => {
-    if (!user) return;
-    setSavingBeAnEscort(true);
-    setError(null);
-    const { error } = await supabase
-      .from("profiles")
-      .upsert({ id: user.id, escort: value, updated_at: new Date().toISOString() });
-
-    if (error) {
-      setError(error.message);
-    } else {
-      setProfile({ ...profile, escort: value } as Profile);
-    }
-    setSavingBeAnEscort(false);
   };
 
   /* --- Graduation date ----------------------------------------*/
@@ -560,13 +541,6 @@ export default function ProfilePage() {
                   {savingGraduationDate && <div className="absolute inset-0 flex items-center justify-center bg-background/50"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>}
                 </PopoverContent>
               </Popover>
-            </Field>
-
-            <Field orientation="horizontal">
-              <FieldLabel htmlFor="be-an-escort-switch" className="w-16">
-                <VaultIcon className="h-4 w-4 text-muted-foreground" /> Be an escort {savingBeAnEscort && <Loader2 className="h-4 w-4 animate-spin" />}
-              </FieldLabel>
-              <Switch id="be-an-escort-switch" onCheckedChange={(v: boolean) => handleSaveBeAnEscort(v)} checked={profile?.escort ?? false} disabled={savingBeAnEscort} />
             </Field>
           </FieldGroup>
 
