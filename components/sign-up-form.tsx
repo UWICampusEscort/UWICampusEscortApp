@@ -118,7 +118,7 @@ export function SignUpForm({
                   <Input
                     id="email"
                     type="email"
-                    placeholder="you@my.uwi.edu"
+                    placeholder="you@mymona.uwi.edu"
                     required
                     className="pl-9"
                     value={email}

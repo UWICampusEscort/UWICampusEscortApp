@@ -62,6 +62,12 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
+  if (user && (request.nextUrl.pathname == "/auth/login" || request.nextUrl.pathname == "/auth/sign-up")) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/home";
+    return NextResponse.redirect(url);
+  }
+
   const isEscort = await getIsEscortFromCache(user?.sub ?? "");
 
   if (request.nextUrl.pathname == "/home" && isEscort !== false) {
