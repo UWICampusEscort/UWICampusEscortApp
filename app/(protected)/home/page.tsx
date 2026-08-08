@@ -8,15 +8,14 @@ import { Dialog, DialogClose, DialogContent, DialogDescription, DialogFooter, Di
 import { Field, FieldGroup, FieldLabel, FieldContent } from "@/components/ui/field";
 import { InputGroup, InputGroupInput, InputGroupAddon, InputGroupText } from "@/components/ui/input-group";
 import { createClient } from "@/lib/supabase/client";
-import { getInitials } from "@/lib/utils";
+import { getInitials, cn } from "@/lib/utils";
 import { Suspense, useEffect, useMemo, useState } from "react";
 import { redirect, useSearchParams } from "next/navigation";
 import { toast } from "react-toastify";
 import { Profile } from "../profile/page";
-import RequestEscortSearch from "./requestescortsearch";
-import { createTravelGroup } from "@/app/actions";
+import { createTravelGroup, requestToJoinTravelGroup } from "@/app/actions";
 import Link from "next/link";
-import { ShieldAlert } from "lucide-react";
+import { ShieldAlert, Search, ArrowLeft, ArrowRight, X } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 
 // ---------------------------------------------------------------------------
@@ -36,6 +35,7 @@ type TravelGroupData = {
   end_location: string;
   capacity: number;
   members: string[];
+  requesting_members: string[];
   departure_time: string;
   escorts: string[];
   created_at: string;
@@ -48,7 +48,9 @@ type TravelGroupData = {
   idToUserData: Map<string, TravelGroupUserData>;
 };
 
-type EscorteeEligibility = "checking" | "not_escortee" | "unverified" | "eligible";
+// This page is escortee-only — escorts are routed elsewhere and can never
+// reach the "eligible" state below.
+type EscorteeEligibility = "checking" | "escort_blocked" | "unverified" | "eligible";
 
 // ---------------------------------------------------------------------------
 // Time helpers
@@ -76,7 +78,7 @@ const useDepartureCountdown = (departureTime: string) => {
 };
 
 // ---------------------------------------------------------------------------
-// Shared, reusable pieces (previously duplicated across the two card types)
+// Shared, reusable pieces
 // ---------------------------------------------------------------------------
 
 const UserAvatar = ({
@@ -127,7 +129,6 @@ const EscortsList = ({
 }: {
   data: TravelGroupData;
   canReject: boolean;
-  /** Omit to render escorts read-only (no reject action at all). */
   onReject?: (escortId: string) => void;
 }) => {
   const escortIds = Array.from(new Set([...data.escorts, ...data.requested_escorts]));
@@ -177,8 +178,8 @@ const MembersList = ({
   data: TravelGroupData;
   currentUser: string;
   isOwner: boolean;
-  onKick?: (memberId: string) => void;
-  onBan?: (memberId: string) => void;
+  onKick: (memberId: string) => void;
+  onBan: (memberId: string) => void;
 }) => {
   const [confirmingBan, setConfirmingBan] = useState("");
 
@@ -188,7 +189,7 @@ const MembersList = ({
       <div className="h-48 overflow-y-auto overflow-x-hidden border inset border-border rounded-md p-1 scrollbar-thin">
         {data.members.map((memberId) => {
           const name = data.idToUserData?.get(memberId)?.name || "~Unknown";
-          const canManage = isOwner && currentUser !== memberId && onKick && onBan;
+          const canManage = isOwner && currentUser !== memberId;
           return (
             <div key={memberId} className="flex items-center gap-2 p-2">
               <Link href={`/profile/${memberId}`} className="flex gap-2 items-center w-full h-full">
@@ -198,13 +199,13 @@ const MembersList = ({
 
               {canManage && (
                 <div className="flex gap-2 ml-auto shrink-0">
-                  <Button variant="destructive" size="sm" onClick={() => onKick!(memberId)}>Kick</Button>
+                  <Button variant="destructive" size="sm" onClick={() => onKick(memberId)}>Kick</Button>
                   <Button
                     variant="destructive"
                     size="sm"
                     onClick={() => {
                       if (confirmingBan === memberId) {
-                        onBan!(memberId);
+                        onBan(memberId);
                         setConfirmingBan("");
                       } else {
                         setConfirmingBan(memberId);
@@ -225,58 +226,63 @@ const MembersList = ({
 };
 
 // ---------------------------------------------------------------------------
-// Group card — replaces the old EscortTravelGroup / TravelGroup duplicate pair
+// Profile preview modal — embeds /profile/[userId] inside a dialog so the
+// person never has to leave the page they're browsing groups on.
 // ---------------------------------------------------------------------------
 
-type GroupCardVariant = "browse" | "escort";
+const ProfilePreviewDialog = ({
+  userId,
+  onOpenChange,
+}: {
+  userId: string | null;
+  onOpenChange: (open: boolean) => void;
+}) => (
+  <Dialog open={!!userId} onOpenChange={onOpenChange}>
+    <DialogContent className="w-[92vw] sm:w-full sm:max-w-2xl h-[80vh] p-0 overflow-hidden flex flex-col">
+      <DialogHeader className="px-4 pt-4 pb-2 border-b border-border">
+        <DialogTitle className="text-sm sm:text-base">Profile</DialogTitle>
+        <DialogDescription className="sr-only">Preview of this user's profile</DialogDescription>
+      </DialogHeader>
+      {userId && (
+        <iframe
+          src={`/profile/${userId}`}
+          className="w-full flex-1 border-0"
+          title="Profile preview"
+        />
+      )}
+    </DialogContent>
+  </Dialog>
+);
+
+// ---------------------------------------------------------------------------
+// Group card (escortee view only)
+// ---------------------------------------------------------------------------
 
 const GroupCard = ({
   data,
   currentUser,
-  variant,
+  onViewProfile,
 }: {
   data: TravelGroupData;
   currentUser: string;
-  variant: GroupCardVariant;
+  onViewProfile: (userId: string) => void;
 }) => {
   const time = useDepartureCountdown(data.departure_time);
   const [isDetailsOpen, setIsDetailsOpen] = useState(false);
   const [confirmingDestroy, setConfirmingDestroy] = useState(false);
 
   const isOwner = currentUser === data.created_by;
-  const isBrowseVariant = variant === "browse";
 
-  // Reset the "are you sure" state whenever the details dialog is reopened,
-  // instead of the previous ref-based callback that was never wired up.
   useEffect(() => {
     if (!isDetailsOpen) setConfirmingDestroy(false);
   }, [isDetailsOpen]);
 
   const joinGroup = async () => {
     if (!currentUser) return;
-    const db = createClient();
-    const { data: success, error } = await db.rpc("add_group_member", {
-      group_id: data.id,
-      new_member: currentUser,
-    });
+    const { error } = await requestToJoinTravelGroup(data.id, currentUser);
     if (error) {
       console.error("Error executing query:", error);
-      toast.error("Error joining group. Please try again.\n" + error.message);
-    } else if (success !== true) {
-      toast.error("Group is full!");
-    }
-  };
-
-  const escortGroup = async () => {
-    if (!currentUser || currentUser === data.created_by) return;
-    const db = createClient();
-    const { error } = await db.rpc("add_group_escort", {
-      group_id: data.id,
-      escort: currentUser,
-    });
-    if (error) {
-      console.error("Error executing query:", error);
-      toast.error("Error escorting group. Please try again.\n" + error.message);
+      toast.error("Error requesting to join group. Please try again.\n" + error);
     }
   };
 
@@ -349,33 +355,16 @@ const GroupCard = ({
   };
 
   const renderPrimaryAction = () => {
-    if (isBrowseVariant) {
-      if (currentUser && data.members.includes(currentUser)) {
-        return <Button variant="secondary" size="sm" className="w-full" disabled>Already Joined</Button>;
-      }
-      if (data.banned_members.includes(currentUser)) {
-        return <Button variant="destructive" size="sm" className="w-full" disabled>Banned from Group</Button>;
-      }
-      return <Button variant="secondary" size="sm" className="w-full" onClick={joinGroup}>Join Group</Button>;
+    if (currentUser && data.members.includes(currentUser)) {
+      return <Button variant="secondary" size="sm" className="w-full" disabled>Already Joined</Button>;
     }
-
-    if (currentUser && data.escorts.includes(currentUser)) {
-      return <Button variant="secondary" size="sm" className="w-full" disabled>Already Escorting</Button>;
+    if (data.requesting_members.includes(currentUser)) {
+      return <Button variant="secondary" size="sm" className="w-full" disabled>Request Pending</Button>;
     }
-    if (data.rejected_escorts.includes(currentUser)) {
-      return <Button variant="destructive" size="sm" className="w-full" disabled>Rejected from Group</Button>;
+    if (data.banned_members.includes(currentUser)) {
+      return <Button variant="destructive" size="sm" className="w-full" disabled>Banned from Group</Button>;
     }
-    return (
-      <Button
-        variant="secondary"
-        size="sm"
-        className="w-full"
-        onClick={escortGroup}
-        disabled={currentUser === data.created_by || hasDeparted(data.departure_time)}
-      >
-        Escort Group{data.requested_escorts.includes(currentUser) ? " (Requested)" : ""}
-      </Button>
-    );
+    return <Button variant="secondary" size="sm" className="w-full" onClick={joinGroup}>Join Group</Button>;
   };
 
   return (
@@ -401,18 +390,14 @@ const GroupCard = ({
                     <span className="text-sm text-muted-foreground font-normal shrink-0">{time}</span>
                   </div>
 
-                  <EscortsList
-                    data={data}
-                    canReject={isOwner}
-                    onReject={isBrowseVariant ? rejectEscort : undefined}
-                  />
+                  <EscortsList data={data} canReject={isOwner} onReject={rejectEscort} />
 
                   <MembersList
                     data={data}
                     currentUser={currentUser}
-                    isOwner={isBrowseVariant && isOwner}
-                    onKick={isBrowseVariant ? kick : undefined}
-                    onBan={isBrowseVariant ? ban : undefined}
+                    isOwner={isOwner}
+                    onKick={kick}
+                    onBan={ban}
                   />
                 </div>
               </DialogDescription>
@@ -420,7 +405,7 @@ const GroupCard = ({
 
             <DialogFooter>
               <div className="flex gap-2 w-full justify-between">
-                {isBrowseVariant && isOwner && (
+                {isOwner && (
                   <Button
                     variant="destructive"
                     size="sm"
@@ -449,203 +434,301 @@ const GroupCard = ({
 };
 
 // ---------------------------------------------------------------------------
-// Escort request picker (used inside the "Create Group" form)
+// Create-group wizard
+//   Step 1 — group details (name, capacity, locations, departure, visibility)
+//   Step 2 — pick escorts from a profile list, with a "View Profile" preview
 // ---------------------------------------------------------------------------
 
-const RequestEscort = ({
-  escortUsers,
-  specificEscorts,
-  setSpecificEscorts,
+const EscortPickerRow = ({
+  escort,
+  selected,
+  onToggle,
+  onViewProfile,
 }: {
-  escortUsers: Profile[];
-  specificEscorts: string[];
-  setSpecificEscorts: React.Dispatch<React.SetStateAction<string[]>>;
-}) => {
-  const [searchValue, setSearchValue] = useState<string>("");
-  const matchedEscort = escortUsers.find((e) => e.email.toLowerCase() === searchValue.toLowerCase());
+  escort: Profile;
+  selected: boolean;
+  onToggle: () => void;
+  onViewProfile: () => void;
+}) => (
+  <div
+    className={cn(
+      "flex items-center gap-3 p-2 rounded-md border transition-colors",
+      selected ? "border-primary bg-primary/5" : "border-border"
+    )}
+  >
+    <Checkbox
+      checked={selected}
+      onCheckedChange={onToggle}
+      aria-label={`Select ${escort.full_name || escort.email}`}
+      className="focus-visible:ring-1 focus-visible:ring-offset-0"
+    />
 
-  const handleRequestEscort = () => {
-    if (matchedEscort && !specificEscorts.includes(matchedEscort.id)) {
-      setSpecificEscorts((prev) => [...prev, matchedEscort.id]);
-    }
-    setSearchValue("");
-  };
+    <Avatar className="h-8 w-8 border-2 border-primary-foreground shrink-0">
+      <AvatarImage src={escort.avatar_url ?? ""} alt={escort.full_name || escort.email} />
+      <AvatarFallback className="text-xs">{getInitials(escort.full_name || escort.email)}</AvatarFallback>
+    </Avatar>
 
-  return (
-    <div className="flex flex-col gap-2 w-full">
-      <div className="flex flex-col gap-2 mx-auto w-[90%] sm:w-[50%] min-w-[40vw]">
-        <div className="flex gap-2">
-          <Button
-            variant={specificEscorts.length === 0 ? "default" : "outline"}
-            size="sm"
-            type="button"
-            className="flex-1"
-            onClick={() => setSpecificEscorts([])}
-          >
-            Any
-          </Button>
-          {/* "Specific" mode is entered implicitly by adding an escort below;
-              this is a status indicator rather than a separate clickable action. */}
-          <Button variant={specificEscorts.length > 0 ? "default" : "outline"} size="sm" type="button" className="flex-1" disabled>
-            Specific
-          </Button>
-        </div>
-
-        <div className="flex flex-col sm:flex-row gap-2">
-          <RequestEscortSearch className="flex-3" escortUsers={escortUsers} value={searchValue} setValue={setSearchValue} />
-          <Button variant="outline" size="sm" type="button" className="sm:flex-1" disabled={!searchValue} onClick={handleRequestEscort}>
-            {/* TODO: wire up real credit cost once available from the backend */}
-            Request {matchedEscort?.full_name || searchValue} (XX credits)
-          </Button>
-        </div>
-      </div>
-
-      {specificEscorts.length > 0 && (
-        <div className="flex flex-col gap-2">
-          <span className="text-sm">Requested Escorts:</span>
-          <div className="flex flex-wrap gap-2">
-            {specificEscorts.map((escortId) => {
-              const escort = escortUsers.find((e) => e.id === escortId);
-              if (!escort) return null;
-              return (
-                <Badge key={escortId} variant="secondary" className="flex items-center gap-2">
-                  <Avatar className="h-5 w-5 border-2 border-primary-foreground">
-                    <AvatarImage src={escort.avatar_url ?? ""} alt={escort.full_name || escort.email} />
-                    <AvatarFallback className="text-xs">{getInitials(escort.full_name || escort.email)}</AvatarFallback>
-                  </Avatar>
-                  <span>{escort.full_name || escort.email}</span>
-                  <Button variant="ghost" size="icon" onClick={() => setSpecificEscorts((prev) => prev.filter((id) => id !== escortId))}>
-                    <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-4 h-4">
-                      <path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" />
-                    </svg>
-                  </Button>
-                </Badge>
-              );
-            })}
-          </div>
-        </div>
-      )}
+    <div className="min-w-0 flex-1">
+      <div className="text-sm font-medium truncate">{escort.full_name || escort.email}</div>
+      <div className="text-xs text-muted-foreground truncate">{escort.email}</div>
     </div>
-  );
-};
 
-const CreateGroup = ({ isCreateGroupOpen, setIsCreateGroupOpen, handleTravelGroupCreation, requestingEscort, setRequestingEscort, specificEscorts, setSpecificEscorts, availableEscorts, userId, destination }: { isCreateGroupOpen: boolean; setIsCreateGroupOpen: React.Dispatch<React.SetStateAction<boolean>>; handleTravelGroupCreation: (event: React.FormEvent<HTMLFormElement>) => Promise<void>; requestingEscort: boolean; setRequestingEscort: React.Dispatch<React.SetStateAction<boolean>>; specificEscorts: string[]; setSpecificEscorts: React.Dispatch<React.SetStateAction<string[]>>; availableEscorts: Profile[]; userId: string; destination?: string; }) => (
-  <Dialog open={isCreateGroupOpen} onOpenChange={setIsCreateGroupOpen}>
-    <DialogTrigger asChild>
-      <Button variant="secondary" size="sm">Create</Button>
-    </DialogTrigger>
-    <DialogContent className="min-w-[75vw] max-h-[85vh] overflow-x-hidden overflow-y-auto scrollbar-thin">
-      <DialogHeader>
-        <DialogTitle className="text-sm sm:text-base">Create Travel Group</DialogTitle>
-        <DialogDescription className="text-xs sm:text-sm">
-          Create a new group to travel together with others heading your way. You may also request escorts to join your group for added safety.
-        </DialogDescription>
-      </DialogHeader>
-      {/* key={destination} forces the uncontrolled inputs below to remount
-          (and pick up the new defaultValue) if the destination changes
-          while the dialog is already open. */}
-      <form className="flex flex-col w-full gap-4 py-4" id="createTravelGroup" onSubmit={handleTravelGroupCreation} key={destination ?? "blank"}>
-        <FieldGroup>
-          <div className="flex w-full gap-4">
-            <Field>
-              <InputGroup className="h-auto">
-                <InputGroupInput name="group_name" placeholder="eg. travellers009" className="text-sm sm:text-base" required />
-                <InputGroupAddon align="block-start">
-                  <InputGroupText className="text-xs sm:text-sm">Group Name</InputGroupText>
-                </InputGroupAddon>
-              </InputGroup>
-            </Field>
-
-            <Field>
-              <InputGroup className="h-auto">
-                <InputGroupInput name="capacity" type="number" placeholder="eg. 3" className="text-sm sm:text-base" required />
-                <InputGroupAddon align="block-start">
-                  <InputGroupText className="text-xs sm:text-sm">Capacity</InputGroupText>
-                </InputGroupAddon>
-              </InputGroup>
-            </Field>
-          </div>
-
-          <div className="flex w-full gap-4">
-            <Field>
-              <InputGroup className="h-auto">
-                <InputGroupInput name="start_location" placeholder="eg. FST Block Entrance" className="text-sm sm:text-base" required />
-                <InputGroupAddon align="block-start">
-                  <InputGroupText className="text-xs sm:text-sm">Start Location</InputGroupText>
-                </InputGroupAddon>
-              </InputGroup>
-            </Field>
-
-            <Field>
-              <InputGroup className="h-auto">
-                <InputGroupInput name="end_location" placeholder="eg. Seacole Entrance" defaultValue={destination} className="text-sm sm:text-base" required />
-                <InputGroupAddon align="block-start">
-                  <InputGroupText className="text-xs sm:text-sm">End Location</InputGroupText>
-                </InputGroupAddon>
-              </InputGroup>
-            </Field>
-          </div>
-
-          <Field>
-            <InputGroup className="h-auto">
-              <InputGroupInput name="departure_time" type="datetime-local" placeholder="eg. 2024-06-15 14:00" className="text-sm sm:text-base" required />
-              <InputGroupAddon align="block-start">
-                <InputGroupText className="text-xs sm:text-sm">Departure Time</InputGroupText>
-              </InputGroupAddon>
-            </InputGroup>
-          </Field>
-
-          <Field orientation="horizontal">
-            <Checkbox
-              id="is_public"
-              name="is_public"
-              defaultChecked={false}
-              value="on"
-            />
-            <FieldContent>
-              <FieldLabel htmlFor="is_public">Public Group?</FieldLabel>
-            </FieldContent>
-          </Field>
-
-          <Field orientation="horizontal">
-            <Checkbox
-              id="request_escorts"
-              name="request_escorts"
-              defaultChecked={requestingEscort}
-              onCheckedChange={(v: boolean) => setRequestingEscort(v)}
-              value={requestingEscort ? "on" : "off"}
-            />
-            <FieldContent>
-              <FieldLabel htmlFor="request_escorts">Request Escort(s)?</FieldLabel>
-            </FieldContent>
-          </Field>
-
-          {requestingEscort && (
-            <>
-              <span className="text-xs sm:text-sm text-muted-foreground">Please note that escorts may not always be available.</span>
-              <div className="flex gap-2 items-center">
-                <RequestEscort
-                  escortUsers={availableEscorts.filter((user) => user.id !== userId)}
-                  specificEscorts={specificEscorts}
-                  setSpecificEscorts={setSpecificEscorts}
-                />
-              </div>
-            </>
-          )}
-        </FieldGroup>
-      </form>
-      <DialogFooter>
-        <div className="flex gap-2 w-full justify-between">
-          <DialogClose asChild>
-            <Button variant="outline" type="reset" form="createTravelGroup">Cancel</Button>
-          </DialogClose>
-          <Button variant="default" type="submit" form="createTravelGroup">Create</Button>
-        </div>
-      </DialogFooter>
-    </DialogContent>
-  </Dialog>
+    <Button type="button" variant="outline" size="sm" className="shrink-0" onClick={onViewProfile}>
+      View Profile
+    </Button>
+  </div>
 );
 
+const CreateGroup = ({
+  isCreateGroupOpen,
+  setIsCreateGroupOpen,
+  handleTravelGroupCreation,
+  specificEscorts,
+  setSpecificEscorts,
+  availableEscorts,
+  userId,
+  destination,
+}: {
+  isCreateGroupOpen: boolean;
+  setIsCreateGroupOpen: React.Dispatch<React.SetStateAction<boolean>>;
+  handleTravelGroupCreation: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
+  specificEscorts: string[];
+  setSpecificEscorts: React.Dispatch<React.SetStateAction<string[]>>;
+  availableEscorts: Profile[];
+  userId: string;
+  destination?: string;
+}) => {
+  const [step, setStep] = useState<1 | 2>(1);
+  const [escortSearch, setEscortSearch] = useState("");
+  const [previewUserId, setPreviewUserId] = useState<string | null>(null);
+  const [escortStepReady, setEscortStepReady] = useState(false);
+
+  // Reset the wizard whenever the dialog is reopened.
+  useEffect(() => {
+    if (isCreateGroupOpen) {
+      setStep(1);
+      setEscortSearch("");
+    }
+  }, [isCreateGroupOpen]);
+
+  useEffect(() => {
+    if (step !== 2) {
+      setEscortStepReady(false);
+      return;
+    }
+    const timeout = setTimeout(() => setEscortStepReady(true), 350);
+    return () => clearTimeout(timeout);
+  }, [step]);
+
+  const goToEscortStep = (event: React.MouseEvent<HTMLButtonElement>) => {
+    event.preventDefault();
+    const form = document.getElementById("createTravelGroup") as HTMLFormElement | null;
+    if (form && !form.reportValidity()) return;
+    setStep(2);
+  };
+
+  const toggleEscort = (escortId: string) => {
+    setSpecificEscorts((prev) =>
+      prev.includes(escortId) ? prev.filter((id) => id !== escortId) : [...prev, escortId]
+    );
+  };
+
+  const filteredEscorts = availableEscorts.filter((user) => {
+    if (user.id === userId) return false;
+    const q = escortSearch.trim().toLowerCase();
+    if (!q) return true;
+    return (user.full_name || "").toLowerCase().includes(q) || user.email.toLowerCase().includes(q);
+  });
+
+  return (
+    <>
+      <Dialog open={isCreateGroupOpen} onOpenChange={setIsCreateGroupOpen}>
+        <DialogTrigger asChild>
+          <Button variant="secondary" size="sm">Create</Button>
+        </DialogTrigger>
+        <DialogContent className="min-w-[75vw] max-h-[85vh] overflow-hidden flex flex-col">
+          <DialogHeader>
+            <DialogTitle className="text-sm sm:text-base">
+              {step === 1 ? "Create Travel Group" : "Request Escorts"}
+            </DialogTitle>
+            <DialogDescription className="text-xs sm:text-sm">
+              {step === 1
+                ? "Set up a group to travel together with others heading your way."
+                : "Optionally pick escorts to invite for added safety. You can also skip this and create the group without requesting anyone."}
+            </DialogDescription>
+          </DialogHeader>
+
+          {/* Sliding two-panel wizard. Both steps stay mounted so the form
+              data collected in step 1 survives the transition to step 2. */}
+          <div className="overflow-hidden flex-1">
+            <div
+              className="flex w-[200%] transition-transform duration-300 ease-in-out"
+              style={{ transform: step === 1 ? "translateX(0%)" : "translateX(-50%)" }}
+            >
+              {/* Step 1 */}
+              <div className="w-1/2 pr-2 overflow-y-auto max-h-[60vh] scrollbar-thin">
+                <form
+                  className="flex flex-col w-full gap-4 py-4"
+                  id="createTravelGroup"
+                  onSubmit={handleTravelGroupCreation}
+                  key={destination ?? "blank"}
+                >
+                  <FieldGroup>
+                    <div className="flex w-full gap-4">
+                      <Field>
+                        <InputGroup className="h-auto focus-within:ring-1 focus-within:ring-ring/40 focus-within:ring-offset-0">
+                          <InputGroupInput name="group_name" placeholder="eg. travellers009" className="text-sm sm:text-base" required />
+                          <InputGroupAddon align="block-start">
+                            <InputGroupText className="text-xs sm:text-sm">Group Name</InputGroupText>
+                          </InputGroupAddon>
+                        </InputGroup>
+                      </Field>
+
+                      <Field>
+                        <InputGroup className="h-auto focus-within:ring-1 focus-within:ring-ring/40 focus-within:ring-offset-0">
+                          <InputGroupInput name="capacity" type="number" min={1} placeholder="eg. 3" className="text-sm sm:text-base" required />
+                          <InputGroupAddon align="block-start">
+                            <InputGroupText className="text-xs sm:text-sm">Capacity</InputGroupText>
+                          </InputGroupAddon>
+                        </InputGroup>
+                      </Field>
+                    </div>
+
+                    <div className="flex w-full gap-4">
+                      <Field>
+                        <InputGroup className="h-auto focus-within:ring-1 focus-within:ring-ring/40 focus-within:ring-offset-0">
+                          <InputGroupInput name="start_location" placeholder="eg. FST Block Entrance" className="text-sm sm:text-base" required />
+                          <InputGroupAddon align="block-start">
+                            <InputGroupText className="text-xs sm:text-sm">Start Location</InputGroupText>
+                          </InputGroupAddon>
+                        </InputGroup>
+                      </Field>
+
+                      <Field>
+                        <InputGroup className="h-auto focus-within:ring-1 focus-within:ring-ring/40 focus-within:ring-offset-0">
+                          <InputGroupInput name="end_location" placeholder="eg. Seacole Entrance" defaultValue={destination} className="text-sm sm:text-base" required />
+                          <InputGroupAddon align="block-start">
+                            <InputGroupText className="text-xs sm:text-sm">End Location</InputGroupText>
+                          </InputGroupAddon>
+                        </InputGroup>
+                      </Field>
+                    </div>
+
+                    <Field>
+                      <InputGroup className="h-auto focus-within:ring-1 focus-within:ring-ring/40 focus-within:ring-offset-0">
+                        <InputGroupInput name="departure_time" type="datetime-local" placeholder="eg. 2024-06-15 14:00" className="text-sm sm:text-base" required />
+                        <InputGroupAddon align="block-start">
+                          <InputGroupText className="text-xs sm:text-sm">Departure Time</InputGroupText>
+                        </InputGroupAddon>
+                      </InputGroup>
+                    </Field>
+
+                    <Field orientation="horizontal">
+                      <Checkbox
+                        id="is_public"
+                        name="is_public"
+                        defaultChecked={false}
+                        value="on"
+                        className="focus-visible:ring-1 focus-visible:ring-offset-0"
+                      />
+                      <FieldContent>
+                        <FieldLabel htmlFor="is_public">Public Group?</FieldLabel>
+                      </FieldContent>
+                    </Field>
+                  </FieldGroup>
+                </form>
+              </div>
+
+              {/* Step 2 */}
+              <div className="w-1/2 pl-2 overflow-y-auto max-h-[60vh] scrollbar-thin">
+                <div className="flex flex-col gap-3 py-4">
+                  <InputGroup className="h-auto focus-within:ring-1 focus-within:ring-ring/40 focus-within:ring-offset-0">
+                    <InputGroupInput
+                      placeholder="Search escorts by name or email"
+                      value={escortSearch}
+                      onChange={(e) => setEscortSearch(e.target.value)}
+                      className="text-sm sm:text-base"
+                    />
+                    <InputGroupAddon>
+                      <Search className="h-4 w-4 text-muted-foreground" />
+                    </InputGroupAddon>
+                  </InputGroup>
+
+                  <div className="flex flex-col gap-2">
+                    {filteredEscorts.length === 0 && (
+                      <span className="text-sm text-muted-foreground py-4 text-center">
+                        No escorts match your search.
+                      </span>
+                    )}
+                    {filteredEscorts.map((escort) => (
+                      <EscortPickerRow
+                        key={escort.id}
+                        escort={escort}
+                        selected={specificEscorts.includes(escort.id)}
+                        onToggle={() => toggleEscort(escort.id)}
+                        onViewProfile={() => setPreviewUserId(escort.id)}
+                      />
+                    ))}
+                  </div>
+
+                  {specificEscorts.length > 0 && (
+                    <div className="flex flex-col gap-2 pt-2">
+                      <span className="text-sm">Selected ({specificEscorts.length}):</span>
+                      <div className="flex flex-wrap gap-2">
+                        {specificEscorts.map((escortId) => {
+                          const escort = availableEscorts.find((e) => e.id === escortId);
+                          if (!escort) return null;
+                          return (
+                            <Badge key={escortId} variant="secondary" className="flex items-center gap-2">
+                              <Avatar className="h-5 w-5 border-2 border-primary-foreground">
+                                <AvatarImage src={escort.avatar_url ?? ""} alt={escort.full_name || escort.email} />
+                                <AvatarFallback className="text-xs">{getInitials(escort.full_name || escort.email)}</AvatarFallback>
+                              </Avatar>
+                              <span>{escort.full_name || escort.email}</span>
+                              <Button variant="ghost" size="icon" className="h-4 w-4" onClick={() => toggleEscort(escortId)}>
+                                <X className="w-3 h-3" />
+                              </Button>
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <DialogFooter>
+            <div className="flex gap-2 w-full justify-between">
+              {step === 1 ? (
+                <>
+                  <DialogClose asChild>
+                    <Button variant="outline" type="button">Cancel</Button>
+                  </DialogClose>
+                  <Button variant="default" type="button" onClick={goToEscortStep}>
+                    Next <ArrowRight className="ml-1 h-4 w-4" />
+                  </Button>
+                </>
+              ) : (
+                <>
+                  <Button variant="outline" type="button" onClick={() => setStep(1)}>
+                    <ArrowLeft className="mr-1 h-4 w-4" /> Back
+                  </Button>
+                  <Button variant="default" type="submit" id="create-travel-group" form="createTravelGroup" disabled={!escortStepReady}>
+                    Create {specificEscorts.length > 0 ? `(${specificEscorts.length} escort${specificEscorts.length > 1 ? "s" : ""})` : "(no escorts)"}
+                  </Button>
+                </>
+              )}
+            </div>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <ProfilePreviewDialog userId={previewUserId} onOpenChange={(open) => !open && setPreviewUserId(null)} />
+    </>
+  );
+};
 
 // ---------------------------------------------------------------------------
 // Page
@@ -659,10 +742,10 @@ function HomePageContent() {
   const [groups, setGroups] = useState<TravelGroupData[]>([]);
   const [isCreateGroupOpen, setIsCreateGroupOpen] = useState(false);
   const [eligibility, setEligibility] = useState<EscorteeEligibility>("checking");
-  const [requestingEscort, setRequestingEscort] = useState(false);
   const [specificEscorts, setSpecificEscorts] = useState<string[]>([]);
   const [availableEscorts, setAvailableEscorts] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
+  const [previewUserId, setPreviewUserId] = useState<string | null>(null);
 
   // Arriving with a ?destination= (e.g. from the "Where To?" shortcuts on
   // My Trips) opens the create dialog immediately with it prefilled.
@@ -670,8 +753,6 @@ function HomePageContent() {
     if (destination !== undefined) setIsCreateGroupOpen(true);
   }, [destination]);
 
-  // Derived rather than duplicated in state — avoids an extra render pass
-  // every time `groups` changes.
   const aliveGroups = useMemo(() => groups.filter((group) => group.alive), [groups]);
 
   const fetchUserDataFor = async (db: ReturnType<typeof createClient>, group: TravelGroupData) => {
@@ -691,13 +772,21 @@ function HomePageContent() {
     const db = createClient();
 
     const { data: { user } } = await db.auth.getUser();
-    if (user) setUserId(user.id);
+    if (!user) {
+      setLoading(false);
+      return;
+    }
+    // Use the id we just fetched, not the `userId` state — setUserId()
+    // above won't have flushed into this closure yet on the first run,
+    // so reading `userId` here would query with an empty string.
+    const currentUserId = user.id;
+    setUserId(currentUserId);
 
     db.from("groups")
       .select("*")
       .eq("alive", true)
       .eq("is_public", true)
-      .neq("created_by", userId)
+      .neq("created_by", currentUserId)
       .then(async ({ data }) => {
         if (!data) return;
         const groupsWithUserData = await Promise.all(
@@ -706,24 +795,25 @@ function HomePageContent() {
         setGroups(groupsWithUserData);
       });
 
+    // Escorts eligible to be requested for a trip — profiles flagged as
+    // escorts who haven't graduated yet.
     db.from("profiles")
       .select("*")
       .eq("escort", true)
       .gt("graduation_date", new Date().toISOString())
       .then(({ data }) => {
-        if (data) {
-          setAvailableEscorts(data);
-        }
+        if (data) setAvailableEscorts(data);
       });
 
     const { data: profile } = await db
       .from("profiles")
       .select("escort, identity_status")
-      .eq("id", userId)
+      .eq("id", currentUserId)
       .maybeSingle();
 
+    // Escorts no longer have access to this page — they're routed elsewhere.
     if (profile?.escort) {
-      setEligibility("not_escortee");
+      setEligibility("escort_blocked");
       setLoading(false);
       return;
     }
@@ -735,6 +825,7 @@ function HomePageContent() {
     }
     */
     setEligibility("eligible");
+    setLoading(false);
   };
 
   useEffect(() => {
@@ -780,21 +871,19 @@ function HomePageContent() {
     event.preventDefault();
     const formData = new FormData(event.target as HTMLFormElement);
 
-    const { success, error } = await createTravelGroup({
-      groupName: formData.get("group_name") as string,
-      capacity: parseInt(formData.get("capacity") as string, 10),
-      startLocation: formData.get("start_location") as string,
-      endLocation: formData.get("end_location") as string,
-      departureTime: new Date(formData.get("departure_time") as string).toISOString(),
-      requestEscorts: formData.get("request_escorts") === "on",
+    const { success, error } = await createTravelGroup(formData.get("group_name") as string,
+      parseInt(formData.get("capacity") as string, 10),
+      formData.get("start_location") as string,
+      formData.get("end_location") as string,
+      new Date(formData.get("departure_time") as string).toISOString(),
+      specificEscorts.length > 0,
       userId,
       specificEscorts,
-      isPublic: formData.get("is_public") === "on"
-    });
+      formData.get("is_public") === "on",
+    );
 
     if (success) {
       setIsCreateGroupOpen(false);
-      setRequestingEscort(false);
       setSpecificEscorts([]);
       redirect("/trips");
     } else {
@@ -828,15 +917,15 @@ function HomePageContent() {
     );
   }
 
-  if (eligibility === "not_escortee") {
+  if (eligibility === "escort_blocked") {
     return (
       <div className="mx-auto w-full max-w-4xl px-4 py-24 text-center">
         <ShieldAlert className="mx-auto h-8 w-8 text-muted-foreground" />
         <p className="mt-3 text-muted-foreground">
-          You're not registered as an escortee yet.
+          This page is for escortees. As a registered escort, use your escort dashboard instead.
         </p>
         <Button asChild className="mt-4">
-          <Link href="/profile">Become an escortee</Link>
+          <Link href="/escort">Go to escort dashboard</Link>
         </Button>
       </div>
     );
@@ -853,8 +942,6 @@ function HomePageContent() {
               isCreateGroupOpen={isCreateGroupOpen}
               setIsCreateGroupOpen={setIsCreateGroupOpen}
               handleTravelGroupCreation={handleTravelGroupCreation}
-              requestingEscort={requestingEscort}
-              setRequestingEscort={setRequestingEscort}
               specificEscorts={specificEscorts}
               setSpecificEscorts={setSpecificEscorts}
               availableEscorts={availableEscorts}
@@ -872,10 +959,12 @@ function HomePageContent() {
       ) : (
         <div className="h-160 grid grid-cols-1 gap-6 md:grid-cols-2 py-12 px-4 sm:px-6 scrollbar-none overflow-y-auto">
           {browsableGroups.map((group) => (
-            <GroupCard key={group.id} data={group} currentUser={userId} variant="browse" />
+            <GroupCard key={group.id} data={group} currentUser={userId} onViewProfile={setPreviewUserId} />
           ))}
         </div>
       )}
+
+      <ProfilePreviewDialog userId={previewUserId} onOpenChange={(open) => !open && setPreviewUserId(null)} />
     </div>
   );
 }
