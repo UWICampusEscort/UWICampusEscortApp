@@ -690,6 +690,7 @@ const CreateGroup = ({
   isCreateGroupOpen,
   setIsCreateGroupOpen,
   handleTravelGroupCreation,
+  creatingGroup,
   specificEscorts,
   setSpecificEscorts,
   availableEscorts,
@@ -699,6 +700,7 @@ const CreateGroup = ({
   isCreateGroupOpen: boolean;
   setIsCreateGroupOpen: React.Dispatch<React.SetStateAction<boolean>>;
   handleTravelGroupCreation: (event: React.FormEvent<HTMLFormElement>) => Promise<void>;
+  creatingGroup: boolean;
   specificEscorts: string[];
   setSpecificEscorts: React.Dispatch<React.SetStateAction<string[]>>;
   availableEscorts: Profile[];
@@ -922,7 +924,7 @@ const CreateGroup = ({
                   <Button variant="outline" type="button" onClick={() => setStep(1)}>
                     <ArrowLeft className="mr-1 h-4 w-4" /> Back
                   </Button>
-                  <Button variant="default" type="submit" id="create-travel-group" form="createTravelGroup" disabled={!escortStepReady}>
+                  <Button variant="default" type="submit" id="create-travel-group" form="createTravelGroup" disabled={!escortStepReady || creatingGroup}>
                     Create {specificEscorts.length > 0 ? `(${specificEscorts.length} escort${specificEscorts.length > 1 ? "s" : ""})` : "(no escorts)"}
                   </Button>
                 </>
@@ -953,6 +955,7 @@ function HomePageContent() {
   const [availableEscorts, setAvailableEscorts] = useState<Profile[]>([]);
   const [loading, setLoading] = useState(true);
   const [previewUserId, setPreviewUserId] = useState<string | null>(null);
+  const [creatingGroup, setCreatingGroup] = useState(false);
 
   // Arriving with a ?destination= (e.g. from the "Where To?" shortcuts on
   // My Trips) opens the create dialog immediately with it prefilled.
@@ -1075,6 +1078,9 @@ function HomePageContent() {
   }, []);
 
   const handleTravelGroupCreation = async (event: React.FormEvent<HTMLFormElement>) => {
+    if (creatingGroup)
+      return;
+    setCreatingGroup(true);
     event.preventDefault();
     const formData = new FormData(event.target as HTMLFormElement);
 
@@ -1097,6 +1103,7 @@ function HomePageContent() {
       console.error(error);
       toast.error(`Failed to create travel group: ${error}`);
     }
+    setCreatingGroup(false);
   };
 
   const browsableGroups = [...aliveGroups]
@@ -1149,6 +1156,7 @@ function HomePageContent() {
               isCreateGroupOpen={isCreateGroupOpen}
               setIsCreateGroupOpen={setIsCreateGroupOpen}
               handleTravelGroupCreation={handleTravelGroupCreation}
+              creatingGroup={creatingGroup}
               specificEscorts={specificEscorts}
               setSpecificEscorts={setSpecificEscorts}
               availableEscorts={availableEscorts}
